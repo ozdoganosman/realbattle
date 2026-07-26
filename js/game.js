@@ -263,8 +263,8 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
     return;
   }
-  // dokunulan hücre saldırının giriş noktası olur
-  const atk = startAttack(sim, me, target, commitOf(me), x, y);
+  // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
+  const atk = startAttack(sim, me, target, commitOf(me));
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
     // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.

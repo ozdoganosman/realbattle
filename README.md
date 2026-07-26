@@ -10,13 +10,13 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 
 ## Oynanış
 
-**Dokun, yayıl.** Düşman ya da boş bir toprağa dokun — sınırın *dokunduğun
-noktadan* içeri doğru dalga hâlinde ilerler. Kenar çubuğundaki *Saldırı Gücü*
-kaç asker göndereceğini belirler.
+**Dokun, yayıl.** Düşman ya da boş bir toprağa dokun — o hedefle paylaştığın
+*bütün sınır hattı* aynı anda dalga hâlinde içeri ilerler. Kenar çubuğundaki
+*Saldırı Gücü* kaç asker göndereceğini belirler.
 
 | Mekanik | Nasıl işler |
 |---|---|
-| **Sınır dalgası** | Saldırı, dokunduğun yere en yakın sınır hücresinden başlar ve o hücrenin çevresindeki dar cepheden içeri yayılır — bütün sınır boyunca değil, ittiğin yerden. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
+| **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir ve dalga her yerde eşit hızda ilerler. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre yükselir, açılışta 1.9 kat hızlı). Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla *üstel* artar, yani büyümek kendini besler — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
@@ -66,7 +66,7 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (58)
+npm test               # başsız simülasyon (57)
 npm run test:browser   # masaüstü tarayıcı, gerçek fare (42)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all

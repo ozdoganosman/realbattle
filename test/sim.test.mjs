@@ -200,9 +200,8 @@ t('ele geçen hücrenin zamanı damgalanır (parlama için)', () => {
   assert(yeni > 0, 'hiç hücre damgalanmadı');
 });
 
-// Saldırı, hedefin bütün sınırından değil dokunulan noktadan girmeli —
-// oyunun tek yön kontrolü bu. Başlangıç yurdunun sınırı giriş yarıçapından
-// dar olduğu için ölçüm uzun ve düz bir sınır üzerinde yapılır.
+// Cephe, hedefle paylaşılan BÜTÜN sınır hattıdır: dalga her yerden eşit
+// başlar. Ölçüm uzun ve düz bir sınır üzerinde yapılır ki uçlar ayırt edilsin.
 function genisSinirliSim() {
   const s = fresh();
   const nat = s.nations[0];
@@ -229,40 +228,31 @@ function genisSinirliSim() {
   return { s, nat, bx, by };
 }
 
-t('saldırı verilen giriş noktasından başlar', () => {
+t('cephe sınırın iki ucuna birden uzanır', () => {
   const g = genisSinirliSim();
   if (!g) return;
-  const { s, nat, bx, by } = g;
-  // şeridin sol ucundan gir
-  const atk = startAttack(s, nat, -1, nat.pool, bx + 2, by - 1);
+  const { s, nat, bx } = g;
+  const atk = startAttack(s, nat, -1, nat.pool);
   assert(atk, 'saldırı başlamadı');
-  const enSag = Math.max(...atk.q.map(c => c % W));
-  assert(enSag < bx + 30,
-    `cephe şeridin sağ yarısına kadar uzanmış (x=${enSag}, giriş x=${bx + 2})`);
+  const xs = atk.q.map(c => c % W);
+  assert(Math.min(...xs) <= bx + 2 && Math.max(...xs) >= bx + 57,
+    `cephe şeridin tamamını kapsamıyor (${Math.min(...xs)}..${Math.max(...xs)})`);
 });
 
-t('giriş noktası verilmezse bütün sınır cepheye girer', () => {
+t('dalga sınırın her yerinde aynı anda ilerler', () => {
   const g = genisSinirliSim();
   if (!g) return;
   const { s, nat, bx, by } = g;
-  const hepsi = startAttack(s, nat, -1, nat.pool);
-  const n1 = hepsi.q.length;
-  cancelAttack(s, hepsi);
-  const nokta = startAttack(s, nat, -1, nat.pool, bx + 2, by - 1);
-  assert(nokta.q.length < n1,
-    `noktasal cephe daralmadı (${nokta.q.length} / ${n1})`);
-});
-
-t('farklı noktalara vurmak farklı cepheler açar', () => {
-  const g = genisSinirliSim();
-  if (!g) return;
-  const { s, nat, bx, by } = g;
-  const A = startAttack(s, nat, -1, nat.pool * 0.3, bx + 2, by - 1);
-  cancelAttack(s, A);
-  const B = startAttack(s, nat, -1, nat.pool * 0.3, bx + 57, by - 1);
-  const setA = new Set(A.q);
-  const ortak = B.q.filter(c => setA.has(c)).length;
-  assert.equal(ortak, 0, `iki uçtan açılan cepheler ${ortak} hücrede örtüşüyor`);
+  startAttack(s, nat, -1, nat.pool);
+  for (let i = 0; i < 40; i++) step(s, 0.05, 0.05);
+  // şeridin altı kesin karadır (kurulumda 10 sıra kara arandı); sol ve sağ
+  // uçların ikisinde de aşağı doğru toprak kazanılmış olmalı
+  const kazanildi = (x) => {
+    for (let dy = 6; dy <= 9; dy++) if (s.owner[idx(x, by + dy)] === nat.id) return true;
+    return false;
+  };
+  assert(kazanildi(bx + 3) && kazanildi(bx + 56),
+    'dalga sınırın yalnız bir bölümünde ilerlemiş');
 });
 
 // ---------------------------------------------------------------- deniz

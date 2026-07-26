@@ -559,7 +559,7 @@ button.mini.bad:hover { background: #cc543b; }
       <h1>RealBattle</h1>
       <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
       <div class="rules">
-        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — sınırın <b>dokunduğun noktadan</b> içeri doğru dalga hâlinde ilerler.</div>
+        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — o hedefle olan <b>bütün sınır hattın</b> aynı anda dalga hâlinde içeri ilerler.</div>
         <div><b>Asker bileşik büyür.</b> Mevcut askerin faiz getirir, toprağın ayrıca gelir. Biriktikçe hızlanır.</div>
         <div><b>Seri seri bas.</b> Kaydıraç alt uçta yatıktır — küçük hamleler ucuzdur. Borç yalnız <b>kırmızı bölgede</b> başlar; oraya çekersen hazinenden fazlasını sürersin ve borç kapanana kadar yeni sefer yok.</div>
         <div><b>Kalabalık ordu iyi savunur.</b> Askeri toprağına oranla yoğun olana saldırmak pahalıdır.</div>
@@ -880,7 +880,6 @@ const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırl
 const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
-const ENTRY_R = 9;                    // dokunulan noktadaki cephe yarıçapı (hücre)
 
 function createSim(seed) {
   const world = createWorld(seed);
@@ -1056,11 +1055,9 @@ function attackCost(sim, targetId) {
   return BASE_COST + density(sim.nations[targetId]) * DEF_K;
 }
 
-// Saldırı başlat. Bir giriş noktası verilirse (oyuncunun dokunduğu yer),
-// cephe bütün sınır boyunca değil O NOKTADA açılır ve dalga oradan içeri
-// yayılır — nereden gireceğini seçmek oyunun tek yön kontrolü.
-// Nokta verilmezse eski davranış: bütün ortak sınır cepheye girer.
-function startAttack(sim, nat, targetId, troops, entryX, entryY) {
+// Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
+// oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
+function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
@@ -1078,22 +1075,7 @@ function startAttack(sim, nat, targetId, troops, entryX, entryY) {
   }
   if (!border.length) return null;
 
-  let q = border;
-  if (entryX !== undefined) {
-    // dokunulan yere en yakın sınır hücresini bul, cepheyi onun çevresiyle sınırla
-    let giris = border[0], enYakin = Infinity;
-    for (const c of border) {
-      const dx = (c % W) - entryX, dy = ((c / W) | 0) - entryY;
-      const d = dx * dx + dy * dy;
-      if (d < enYakin) { enYakin = d; giris = c; }
-    }
-    const gx = giris % W, gy = (giris / W) | 0;
-    q = border.filter(c => {
-      const dx = (c % W) - gx, dy = ((c / W) | 0) - gy;
-      return dx * dx + dy * dy <= ENTRY_R * ENTRY_R;
-    });
-    if (!q.length) q = [giris];
-  }
+  const q = border;
   const inQ = new Set(q);
 
   nat.pool -= troops;
@@ -1243,20 +1225,6 @@ function neighbours(sim, nat) {
   return set;
 }
 
-// Hedefe değen kendi sınır hücrelerimizden birini seç (YZ'nin giriş noktası).
-function borderCellToward(sim, nat, targetId) {
-  const tmp = [];
-  const aday = [];
-  for (let c = 0; c < W * H; c += 3) {
-    if (sim.owner[c] !== nat.id) continue;
-    for (const n of nbs(c, tmp)) {
-      if (sim.world.isLand[n] && sim.owner[n] === targetId) { aday.push(n); break; }
-    }
-    if (aday.length > 40) break;
-  }
-  return aday.length ? aday[(sim.rnd() * aday.length) | 0] : null;
-}
-
 function aiThink(sim, nat) {
   const busy = sim.attacks.some(a => a.from === nat.id);
   const nb = neighbours(sim, nat);
@@ -1293,10 +1261,7 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  // YZ de rastgele bir sınır noktasından girsin — tek noktadan taarruz
-  const bcs = borderCellToward(sim, nat, best);
-  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35),
-    bcs ? bcs % W : undefined, bcs ? (bcs / W) | 0 : undefined);
+  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35));
 }
 
 // ------------------------------------------------------------------ ana adım
@@ -1806,8 +1771,8 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
     return;
   }
-  // dokunulan hücre saldırının giriş noktası olur
-  const atk = startAttack(sim, me, target, commitOf(me), x, y);
+  // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
+  const atk = startAttack(sim, me, target, commitOf(me));
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
     // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
