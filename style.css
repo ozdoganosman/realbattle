@@ -263,7 +263,7 @@ button.mini.bad:hover { background: #cc543b; }
 
 /* krallık listesi */
 .nat-row {
-  display: grid; grid-template-columns: 14px 1fr auto auto;
+  display: grid; grid-template-columns: 14px 1fr auto auto auto;
   align-items: center; gap: 8px;
   padding: 7px; border-radius: 6px; font-size: 13.5px;
   margin-bottom: 3px;
@@ -278,6 +278,9 @@ button.mini.bad:hover { background: #cc543b; }
 }
 .nat-row .nm { font-weight: bold; }
 .nat-row .pc { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.nat-row .tr { font-size: 12.5px; font-variant-numeric: tabular-nums; font-weight: bold; }
+.nat-row .tr i { font-style: normal; }
+.nat-row .tr .debt { color: var(--bad); }
 .nat-row .st {
   font-size: 11px; padding: 2px 7px; border-radius: 9px;
   background: #dbcaa4; color: #4a3a20; white-space: nowrap;

@@ -18,7 +18,7 @@ göndereceğini belirler.
 |---|---|
 | **Sınır dalgası** | Saldırı, hedefin sana değen bütün sınırından başlar ve içeri doğru yayılır. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre yükselir, açılışta 1.9 kat hızlı). Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla *üstel* artar, yani büyümek kendini besler — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
-| **Tavanlar** | Yumuşak tavan toprağın **40 katı**, sert tavan **60 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
+| **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Borçlanma** | Kaydıraç, gönderebileceğin **toplam gücün** yüzdesidir: garnizon + borçlanabileceğin. Hazinen boşken bile saldırabilirsin — eksik kısmı borçlanırsın ve askerin eksiye düşer. Kaydıracın kırmızı bölgesi borç bölgesidir ve sınırı hazinenle birlikte kayar. Gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür, kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
 | **Savunan da erir** | Kaybedilen her hücre savunanın askerinden de götürür. |
@@ -35,6 +35,7 @@ haritası gibi dursun diye varlar.
 
 - Dar ekranda çekmece kapalıyken bile asker, faiz, gelir geri sayımı, hazine
   çubuğu ve süren sefer görünür kalır
+- Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır

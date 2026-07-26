@@ -123,18 +123,39 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
     }
   }
 
+  // Büyük sayıyı kısalt: 1.2B gibi. Haritada yer dar.
+  function kisa(v) {
+    const n = Math.round(v);
+    if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1).replace('.', ',') + 'M';
+    if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace('.', ',') + 'B';
+    return String(n);
+  }
+
   function paintLabels() {
     mctx.textAlign = 'center';
     mctx.textBaseline = 'middle';
     for (const nat of sim.nations) {
       if (!nat.alive || nat.cells < 45) continue;
+      const x = nat.cx * S, y = nat.cy * S;
       const size = clamp(Math.sqrt(nat.cells) * 0.5, 11, 30);
+
       mctx.font = `bold ${size}px Georgia, serif`;
       mctx.lineWidth = 3.5;
       mctx.strokeStyle = 'rgba(250,244,225,0.5)';
-      mctx.strokeText(nat.name, nat.cx * S, nat.cy * S);
+      mctx.strokeText(nat.name, x, y);
       mctx.fillStyle = 'rgba(24,14,4,0.85)';
-      mctx.fillText(nat.name, nat.cx * S, nat.cy * S);
+      mctx.fillText(nat.name, x, y);
+
+      // adın altında garnizondaki asker — herkesinki görünsün
+      const ns = clamp(size * 0.72, 9, 19);
+      mctx.font = `${ns}px Georgia, serif`;
+      const borclu = nat.pool < 0;
+      const yazi = borclu ? `−${kisa(-nat.pool)}` : kisa(nat.pool);
+      mctx.lineWidth = 3;
+      mctx.strokeStyle = 'rgba(250,244,225,0.5)';
+      mctx.strokeText(yazi, x, y + size * 0.82);
+      mctx.fillStyle = borclu ? 'rgba(150,40,25,0.95)' : 'rgba(38,24,8,0.78)';
+      mctx.fillText(yazi, x, y + size * 0.82);
     }
   }
 

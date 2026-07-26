@@ -516,7 +516,9 @@ function refreshDiplo() {
       `<span class="sw" style="background:${n.color}"></span>` +
       `<span class="nm">${n.name}</span>` +
       `<span class="pc">${(landFrac(sim, n) * 100).toFixed(1)}%</span>` +
-      `<span class="st">${self ? 'sen' : ally ? 'ittifak' : 'yoğunluk ' + density(n).toFixed(1)}</span>`;
+      `<span class="tr" title="Garnizondaki asker">${n.pool < 0
+        ? `<i class="debt">−${fmt(-n.pool)}</i>` : fmt(n.pool)}</span>` +
+      `<span class="st">${self ? 'sen' : ally ? 'ittifak' : 'yğ ' + density(n).toFixed(1)}</span>`;
     if (!self) {
       const acts = document.createElement('div');
       acts.className = 'acts';
@@ -558,7 +560,9 @@ function drainFx() {
       ui.shake = Math.max(ui.shake, 9);
     } else if (f.tip === 'betray' && f.nat !== sim.playerId) {
       sfx.betray();
-    } else if (f.tip === 'tick' && f.income) {
+    } else if (f.tip === 'tick') {
+      sim.dirty = true;                  // haritadaki asker sayıları tazelensin
+      if (!f.income) continue;
       // arazi geliri yattı — görünür ve duyulur olsun
       sfx.income();
       const box = $('sec-treasury');

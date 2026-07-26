@@ -22,35 +22,45 @@ export const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
 export const TICK = 0.56;             // faiz periyodu (sn)
 export const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
-// Genel hız çarpanı.
-export const INCOME_SCALE = 3;
+// Bütün asker sayıları bu kadar küçülür — sadece okunabilirlik için, oyunun
+// dengesini değiştirmez (hem gelirler hem tavanlar hem bedeller birlikte iner).
+const TROOP_SCALE = 1 / 3.5;
+// Buna EK olarak toprak ucuzlar: aynı askerle daha çok yer alırsın.
+const LAND_CHEAP = 1.6;
+
+// Ekonominin hızı — birimsiz. Asker ölçeğinden bağımsızdır.
+const SPEED = 3;
+// Arsa ödemesi asker birimindedir, bu yüzden asker ölçeğiyle birlikte küçülür.
+export const INCOME_SCALE = SPEED * TROOP_SCALE;
 // Arazi geliri toprakla ÜSTEL artar: büyümek kendi kendini besler.
 const INCOME_EXP = 1.18;
 // Gelir tikinde faiz de toplu (balon) ödeme yapar — tik faizinin bu katı.
 const BALLOON = 6;
-const INTEREST_MIN = 0.016 * INCOME_SCALE;   // çok az toprakta tik başına faiz
-const INTEREST_MAX = 0.040 * INCOME_SCALE;   // bütün haritaya hükmederken
+// Faiz bir ORAN: asker ölçeğiyle değil, yalnız hızla çarpılır.
+const INTEREST_MIN = 0.016 * SPEED;   // çok az toprakta tik başına faiz
+const INTEREST_MAX = 0.040 * SPEED;   // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
 // asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
 // bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
-const SOFT_MULT = 40;                 // yumuşak tavan = toprak × bu
-const HARD_MULT = 60;                 // sert tavan — faiz burada tam durur
+const SOFT_MULT = 40 * TROOP_SCALE;   // yumuşak tavan = toprak × bu
+const HARD_MULT = 60 * TROOP_SCALE;   // sert tavan — faiz burada tam durur
 const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
 const EARLY_SECS = 100;               // bu sürede 1'e iner
-const START_MULT = 9;                 // başlangıç askeri = toprak × bu
+const START_MULT = 9 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
 
 // --- borçlanma ---
 // Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
 // önce borcu kapatır, borç da kendi faiziyle büyür — bedava kredi değil.
-const DEBT_MULT = 10;                 // en fazla borç = toprak × bu
+const DEBT_MULT = 10 * TROOP_SCALE;   // en fazla borç = toprak × bu
 const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — borçlanmak riskli
 
 // --- saldırı dengesi ---
 // Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
 // asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
-const NEUTRAL_COST = 25;              // tarafsız hücrenin bedeli
-const BASE_COST = 22;                 // düşman hücresinin taban bedeli
-const DEF_K = 1.8;                    // savunanın asker yoğunluğunun ağırlığı
+const NEUTRAL_COST = 25 * TROOP_SCALE / LAND_CHEAP;  // tarafsız hücrenin bedeli
+const BASE_COST = 22 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tabanı
+// Yoğunluk zaten asker ölçeğiyle küçüldüğü için burada yalnız ucuzlatma var.
+const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırlığı
 const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
@@ -135,8 +145,8 @@ export const locked = (sim, n) => n.lockUntil > sim.realT;
 export const landFrac = (sim, nat) => nat.cells / sim.landCells;
 
 // Tavanlar toprağa bağlı: büyüdükçe biriktirebileceğin asker de büyür.
-export function softCap(sim, nat) { return Math.max(60, nat.cells * SOFT_MULT); }
-export function hardCap(sim, nat) { return Math.max(90, nat.cells * HARD_MULT); }
+export function softCap(sim, nat) { return Math.max(60 * TROOP_SCALE, nat.cells * SOFT_MULT); }
+export function hardCap(sim, nat) { return Math.max(90 * TROOP_SCALE, nat.cells * HARD_MULT); }
 export const troopCap = hardCap;      // arayüzde gösterilen tavan
 
 // Tik başına bileşik faiz oranı. Toprak payıyla yükselir, yumuşak tavandan
@@ -151,7 +161,6 @@ export function interestRate(sim, nat) {
   return r;
 }
 
-// Borçtayken savunma yoğunluğu negatife düşmesin — bedel tabanın altına inmez.
 // Gelir tikinde yatacak toplu ödeme: arazi geliri (toprakla üstel) artı
 // faizin balon ödemesi. Arayüz bunu okuyup geri sayımın yanında gösterir.
 export function incomePayout(sim, nat) {
@@ -160,6 +169,7 @@ export function incomePayout(sim, nat) {
   return { land, balloon, total: land + balloon };
 }
 
+// Borçtayken savunma yoğunluğu negatife düşmesin — bedel tabanın altına inmez.
 export function density(nat) { return Math.max(0, nat.pool) / Math.max(25, nat.cells); }
 
 export function maxDebt(sim, nat) { return nat.cells * DEBT_MULT; }
