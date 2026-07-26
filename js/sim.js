@@ -32,8 +32,9 @@ const LAND_CHEAP = 1.6;
 const SPEED = 3;
 // Arsa ödemesi asker birimindedir, bu yüzden asker ölçeğiyle birlikte küçülür.
 export const INCOME_SCALE = SPEED * TROOP_SCALE;
-// Arazi geliri toprakla ÜSTEL artar: büyümek kendi kendini besler.
-const INCOME_EXP = 1.18;
+// Arazi geliri toprakla üstel artar ama üs 1'e yakın tutulur: büyümek biraz
+// kendini besler, yoksa lider ilk çeyrekte kopuyor ve küçüklerin şansı kalmıyor.
+const INCOME_EXP = 1.09;
 // Gelir tikinde faiz de toplu (balon) ödeme yapar — tik faizinin bu katı.
 const BALLOON = 6;
 // Faiz bir ORAN: asker ölçeğiyle değil, yalnız hızla çarpılır.
@@ -46,7 +47,7 @@ const SOFT_MULT = 40 * TROOP_SCALE;   // yumuşak tavan = toprak × bu
 const HARD_MULT = 60 * TROOP_SCALE;   // sert tavan — faiz burada tam durur
 const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
 const EARLY_SECS = 100;               // bu sürede 1'e iner
-const START_MULT = 9 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
+const START_MULT = 18 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
 
 // --- borçlanma ---
 // Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
@@ -61,7 +62,10 @@ const NEUTRAL_COST = 25 * TROOP_SCALE / LAND_CHEAP;  // tarafsız hücrenin bede
 const BASE_COST = 22 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tabanı
 // Yoğunluk zaten asker ölçeğiyle küçüldüğü için burada yalnız ucuzlatma var.
 const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırlığı
-const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
+// Savunan da mücadele ettiği için erir: alınan hücrenin bedeli kadar asker
+// kaybeder. Kanamak yoğunluğunu düşürür, düşen yoğunluk hücreyi ucuzlatır —
+// yani baskı altındaki büyük ordu giderek daha kolay kırılır.
+const DEF_LOSS = 1.0;
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 
@@ -239,15 +243,8 @@ export function attackCost(sim, targetId) {
   return BASE_COST + density(sim.nations[targetId]) * DEF_K;
 }
 
-// Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
-// oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
-export function startAttack(sim, nat, targetId, troops) {
-  if (!canAttack(sim, nat, targetId)) return null;
-  troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
-  const cost = attackCost(sim, targetId);
-  if (troops < cost) return null;                 // tek hücreye bile yetmiyor
-
-  // hedefin bize değen bütün hücreleri
+// Hedefin bize değen bütün hücreleri — cephenin ta kendisi.
+function frontOf(sim, nat, targetId) {
   const border = [];
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
@@ -257,10 +254,37 @@ export function startAttack(sim, nat, targetId, troops) {
       if (sim.owner[n] === nat.id) { border.push(c); break; }
     }
   }
+  return border;
+}
+
+// Bu cepheyi bir hücre içeri itmenin bedeli — yapılabilecek EN KÜÇÜK hamle.
+export function frontCost(sim, nat, targetId) {
+  if (targetId === nat.id) return 0;
+  return frontOf(sim, nat, targetId).length * attackCost(sim, targetId);
+}
+
+// Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
+// oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
+export function startAttack(sim, nat, targetId, troops) {
+  if (!canAttack(sim, nat, targetId)) return null;
+  troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
+  const cost = attackCost(sim, targetId);
+
+  const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  const q = border;
-  const inQ = new Set(q);
+  // Cephe tek parça ilerlediği için en küçük hamle "bütün sınır bir hücre
+  // içeri"dir. Kaydıraç daha azını söylüyorsa hamle boşa düşmesin diye tam bu
+  // en küçük hamleye yuvarlanır — ama kendiliğinden borçlandırmaz: tavan,
+  // hazinen ile zaten göze aldığın borcun büyüğüdür.
+  const enAz = border.length * cost;
+  if (troops < enAz) {
+    if (enAz > Math.max(nat.pool, troops)) return null;
+    troops = enAz;
+  }
+
+  const layer = border;
+  const inQ = new Set(layer);
 
   nat.pool -= troops;
   // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
@@ -268,7 +292,9 @@ export function startAttack(sim, nat, targetId, troops) {
   const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    troops, start: troops, q, qi: 0, inQ, acc: 0, rate,
+    // acc bir HALKA borcu olarak başlar: ilk halka daha ilk adımda düşer,
+    // dokunuşun karşılığı anında görünür.
+    troops, start: troops, layer, inQ, acc: layer.length, rate,
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -318,37 +344,42 @@ function stepAttacks(sim, dt) {
     const nat = sim.nations[a.from];
     if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
 
+    // Dalga hücre hücre değil HALKA halka ilerler: sıradaki halkanın tamamı
+    // aynı anda düşer, böylece sınır her yerde aynı derinlikte kalır — dişli
+    // ya da noktalı bir cephe oluşmaz. Bir halkanın süresi hücre sayısıyla
+    // orantılıdır (acc, halka uzunluğunu doldurunca düşer), yani az askerle
+    // yapılan saldırı ince ama düzgün bir çizgi kadar ilerler.
     a.acc += a.rate * dt;
-    let budget = Math.floor(a.acc);
-    if (budget <= 0) continue;
-    a.acc -= budget;
 
-    let took = 0;
-    while (budget-- > 0) {
-      if (a.qi >= a.q.length) break;                 // cephe tükendi
-      const c = a.q[a.qi++];
-      if (sim.owner[c] !== a.target) continue;       // başkası kapmış
+    while (a.layer.length && a.acc >= a.layer.length && a.troops > 0) {
       const cost = attackCost(sim, a.target);
-      if (a.troops < cost) { a.troops = 0; break; }
-      a.troops -= cost;
-      if (a.target >= 0) {
-        const def = sim.nations[a.target];
-        def.pool = Math.max(0, def.pool - cost * DEF_LOSS);
+      // Halka ya tamamen alınır ya hiç: yarım kalan halka sınırı noktalı
+      // bırakırdı. Yetmiyorsa sefer biter, kalan asker garnizona döner.
+      if (a.troops < a.layer.length * cost) { a.layer = []; break; }
+      a.acc -= a.layer.length;
+      const next = [];
+      for (const c of a.layer) {
+        if (sim.owner[c] !== a.target) continue;      // başkası kapmış
+        a.troops -= cost;
+        if (a.target >= 0) {
+          const def = sim.nations[a.target];
+          def.pool = Math.max(0, def.pool - cost * DEF_LOSS);
+        }
+        take(sim, c, nat);
+        a.lastX = c % W; a.lastY = (c / W) | 0;
+        for (const n of nbs(c, tmp)) {
+          // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
+          // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
+          // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
+          // ulus karaya doğru büyüyemez.
+          if (!sim.world.isLand[n]) continue;
+          if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); next.push(n); }
+        }
       }
-      take(sim, c, nat);
-      took++;
-      for (const n of nbs(c, tmp)) {
-        // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
-        // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
-        // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
-        // ulus karaya doğru büyüyemez.
-        if (!sim.world.isLand[n]) continue;
-        if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.q.push(n); }
-      }
+      a.layer = next;
     }
-    if (took) a.lastX = (a.q[a.qi - 1] % W), a.lastY = ((a.q[a.qi - 1] / W) | 0);
 
-    if (a.troops <= 0 || a.qi >= a.q.length) {
+    if (a.troops <= 0 || !a.layer.length) {
       if (a.troops > 0) deposit(sim, nat, a.troops); // cephe bitti, kalan geri döner
       sim.attacks.splice(i, 1);
     }
@@ -427,7 +458,7 @@ function aiThink(sim, nat) {
     }
   }
 
-  if (busy || locked(sim, nat) || nat.pool < softCap(sim, nat) * 0.35) return;
+  if (busy || locked(sim, nat) || nat.pool < softCap(sim, nat) * 0.4) return;
 
   // hedef: en ucuz komşu. Tarafsız toprak varsa ona öncelik.
   let best = null, bestScore = -Infinity;
@@ -445,7 +476,7 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35));
+  startAttack(sim, nat, best, nat.pool * (0.85 + sim.rnd() * 0.15));
 }
 
 // ------------------------------------------------------------------ ana adım

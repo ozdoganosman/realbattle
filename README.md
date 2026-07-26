@@ -16,13 +16,14 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 
 | Mekanik | Nasıl işler |
 |---|---|
-| **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir ve dalga her yerde eşit hızda ilerler. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre yükselir, açılışta 1.9 kat hızlı). Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla *üstel* artar, yani büyümek kendini besler — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
+| **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler — sıradaki halkanın tamamı aynı anda düşer, yani sınır her yerde aynı derinlikte kalır, dişli ya da noktalı bir cephe oluşmaz. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
+| **En küçük hamle** | Bir halka ya tamamen alınır ya hiç. Bu yüzden en küçük hamle "bütün sınırı bir hücre içeri it"tir; kaydıraç daha azını söylerse hamle sessizce bu en küçük değere yuvarlanır (borçlandırmaz). Cephe uzadıkça en küçük hamle de pahalanır — geniş sınır itmek pahalı, dar sınır itmek ucuzdur. |
+| **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre yükselir, açılışta 1.9 kat hızlı). Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs 1'e yakın tutulur (toprak iki katına çıkınca ödeme ~2.1 kat), yani büyümek kendini besler fakat lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
 | **Borçlanma** | Borç bölgesi kaydıracın son diliminde (kırmızı) sabittir — oraya çekmeden borçlanmazsın. Hazinen bittiğinde de saldırabilirsin, ama bu bilinçli bir tercihtir: askerin eksiye düşer, gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
-| **Savunan da erir** | Kaybedilen her hücre savunanın askerinden de götürür. |
+| **Savunan da erir** | Savunan mücadele ettiği için kanar: kaybettiği her hücrenin **tam bedeli** kadar asker gider. Kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — baskı altındaki büyük ordu giderek daha kolay kırılır. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
 | **İttifak** | Müttefikler birbirine saldıramaz. Ama ittifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. |
 
@@ -66,8 +67,8 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (57)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (42)
+npm test               # başsız simülasyon (61)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (43)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

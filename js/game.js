@@ -8,7 +8,7 @@ import {
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   INCOME_SCALE, incomePayout,
-  startAttack, cancelAttack, canAttack, attackCost,
+  startAttack, cancelAttack, canAttack, attackCost, frontCost,
   formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
@@ -264,15 +264,18 @@ function tapAttack(sx, sy) {
     return;
   }
   // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
-  const atk = startAttack(sim, me, target, commitOf(me));
+  const istenen = commitOf(me);
+  const atk = startAttack(sim, me, target, istenen);
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
     // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
     let mesaj;
     if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
       mesaj = 'Bu cephe zaten açık';
-    } else if (commitOf(me) < attackCost(sim, target) && maxDebt(sim, me) > 0) {
-      mesaj = 'Hazinen yetmiyor — saldırı gücünü kırmızı bölgeye çekip borçlanabilirsin';
+    } else if (frontCost(sim, me, target) > 0) {
+      // En küçük hamle bütün cepheyi bir hücre itmektir; ona bile yetmiyor.
+      mesaj = `Bu cepheyi itmek için ${fmt(frontCost(sim, me, target))} asker gerek `
+            + '— gücü kırmızı bölgeye çekip borçlanabilirsin';
     } else {
       mesaj = 'Sınırın buraya değmiyor';
     }
@@ -280,6 +283,10 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
   }
+  // Cephe tek parça ilerlediği için kaydıracın söylediği az miktar en küçük
+  // hamleye yuvarlanmış olabilir — ne gittiğini söyle.
+  if (atk.start > istenen * 1.05)
+    flash(`En küçük hamle bu cephede ${fmt(atk.start)} asker`);
   renderer.ripple(x, y, me.color);
   sfx.attack();
   ui.shake = Math.max(ui.shake, 5);
@@ -714,7 +721,7 @@ function frame(now) {
 window.__rb = {
   sim, ui, view, W, H, S, focusHome, fitStage, sfx,
   api: {
-    startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
+    startAttack, cancelAttack, canAttack, attackCost, frontCost, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },

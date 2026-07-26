@@ -7,7 +7,7 @@ import {
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
-  incomePayout, INCOME_SCALE,
+  incomePayout, INCOME_SCALE, frontCost,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -175,6 +175,30 @@ t('kalabalık ordu daha pahalıya saldırılır', () => {
     `${attackCost(s, zayif.id).toFixed(1)} vs ${attackCost(s, guclu.id).toFixed(1)}`);
 });
 
+// Savunan mücadele ettiği için erir: kaybettiği hücrenin bedeli kadar asker
+// gider. Kanadıkça yoğunluğu düşer, hücreleri ucuzlar.
+t('savunan, alınan hücrenin bedeli kadar asker kaybeder', () => {
+  const s = fresh();
+  const A = s.nations[0];
+  let hedef = -1;
+  for (let i = 1; i < s.nations.length; i++) if (findBorder(s, 0, i) >= 0) { hedef = i; break; }
+  if (hedef < 0) return;
+  const B = s.nations[hedef];
+  B.pool = 40000;                          // tavana takılmasın diye bol asker
+  B.cells = Math.max(B.cells, 1);
+  const oncePool = B.pool, onceCells = B.cells;
+  const bedel = attackCost(s, hedef);
+  A.pool = 200000;
+  startAttack(s, A, hedef, 60000);
+  for (let i = 0; i < 30; i++) step(s, 1 / 30, 1 / 30);
+  const alinan = onceCells - B.cells;
+  assert(alinan > 0, 'hiç hücre alınmadı');
+  const kayip = oncePool - B.pool;
+  // en az alınan hücre × bedel kadar erimeli (tavan kırpması daha da düşürebilir)
+  assert(kayip >= alinan * bedel * 0.9,
+    `${alinan} hücre için yalnız ${kayip.toFixed(0)} asker eridi, ~${(alinan*bedel).toFixed(0)} beklendi`);
+});
+
 t('savunan da hücre başına asker kaybeder', () => {
   const s = fresh();
   const A = s.nations[0];
@@ -234,7 +258,7 @@ t('cephe sınırın iki ucuna birden uzanır', () => {
   const { s, nat, bx } = g;
   const atk = startAttack(s, nat, -1, nat.pool);
   assert(atk, 'saldırı başlamadı');
-  const xs = atk.q.map(c => c % W);
+  const xs = atk.layer.map(c => c % W);
   assert(Math.min(...xs) <= bx + 2 && Math.max(...xs) >= bx + 57,
     `cephe şeridin tamamını kapsamıyor (${Math.min(...xs)}..${Math.max(...xs)})`);
 });
@@ -253,6 +277,50 @@ t('dalga sınırın her yerinde aynı anda ilerler', () => {
   };
   assert(kazanildi(bx + 3) && kazanildi(bx + 56),
     'dalga sınırın yalnız bir bölümünde ilerlemiş');
+});
+
+// Halka ya tamamen alınır ya hiç: sınır hiçbir zaman dişli/noktalı kalmaz.
+t('en küçük hamle bütün sınırı bir hücre iter', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const oncekiSinir = [];
+  for (let c = 0; c < W * H; c++) {
+    if (s.owner[c] !== -1 || !s.world.isLand[c]) continue;
+    const x = c % W;
+    const nb = [];
+    if (x > 0) nb.push(c - 1);
+    if (x < W - 1) nb.push(c + 1);
+    if (c >= W) nb.push(c - W);
+    if (c < W * (H - 1)) nb.push(c + W);
+    if (nb.some(n => s.owner[n] === nat.id)) oncekiSinir.push(c);
+  }
+  const gerekli = frontCost(s, nat, -1);
+  assert(gerekli > 0, 'cephe bedeli hesaplanamadı');
+  // kaydıraç "bir hücrelik" kadar az söylese bile hamle bir HALKAYA yuvarlanır
+  startAttack(s, nat, -1, gerekli * 0.05);
+  for (let i = 0; i < 6; i++) step(s, 0.05, 0.05);
+  const alinmayan = oncekiSinir.filter(c => s.owner[c] !== nat.id).length;
+  assert.equal(alinmayan, 0,
+    `${alinmayan}/${oncekiSinir.length} sınır hücresi alınmadı — cephe noktalı kalmış`);
+});
+
+t('cephe bedeli sınır uzunluğuyla orantılıdır', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const bedel = frontCost(s, nat, -1);
+  const birim = attackCost(s, -1);
+  assert(bedel > birim * 50, `cephe bedeli tek hücre gibi davranıyor (${bedel} / ${birim})`);
+});
+
+t('yetmeyen hamle yarım halka bırakmaz — hiç başlamaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  nat.pool = frontCost(s, nat, -1) * 0.4;      // bir halkanın yarısı bile yok
+  const a = startAttack(s, nat, -1, nat.pool);
+  assert.equal(a, null, 'yarım halkalık saldırı başladı');
 });
 
 // ---------------------------------------------------------------- deniz
@@ -412,8 +480,10 @@ t('arsa ödemesi toprakla ÜSTEL artıyor', () => {
   const az = incomePayout(s, nat).land;
   nat.cells = 200;
   const cok = incomePayout(s, nat).land;
-  // toprak iki katına çıkınca ödeme ikiden FAZLA katına çıkmalı
-  assert(cok > az * 2.1, `${az.toFixed(0)} → ${cok.toFixed(0)} (yalnız ${(cok/az).toFixed(2)} kat)`);
+  // Toprak iki katına çıkınca ödeme ikiden FAZLA katına çıkmalı — ama üs 1'e
+  // yakın tutulur ki lider kaçmasın: kazanç belirgin, ezici değil.
+  const kat = cok / az;
+  assert(kat > 2 && kat < 2.3, `${az.toFixed(0)} → ${cok.toFixed(0)} (${kat.toFixed(2)} kat)`);
 });
 
 t('gelir tikinde faizin balon ödemesi de yatıyor', () => {
@@ -468,7 +538,7 @@ t('ödemeler kesikli: gelir tam onuncu tikte yatıyor', () => {
   // ilk dokuz tikte hiçbir şey yatmamalı, onuncuda toplu ödeme
   assert.deepEqual(yatan.slice(0, 9), new Array(9).fill(0),
     `erken ödeme var: ${yatan.join(',')}`);
-  const beklenen = Math.round(Math.pow(200, 1.18) * INCOME_SCALE);
+  const beklenen = Math.round(incomePayout(s, nat).land);
   assert(Math.abs(yatan[9] - beklenen) <= 2,
     `onuncu tikte ${yatan[9]} yattı, ~${beklenen} beklendi`);
 });
