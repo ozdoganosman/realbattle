@@ -6,9 +6,11 @@
   "private": true,
   "scripts": {
     "start": "node server/static.mjs",
+    "build": "node scripts/bundle.mjs",
     "test": "node test/sim.test.mjs",
     "test:browser": "node test/browser.test.mjs",
-    "test:all": "npm run test && npm run test:browser"
+    "test:mobile": "node test/mobile.test.mjs",
+    "test:all": "npm run test && npm run test:browser && npm run test:mobile"
   },
   "devDependencies": {
     "playwright": "^1.49.1"

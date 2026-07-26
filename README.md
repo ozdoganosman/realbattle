@@ -14,6 +14,12 @@ birimlerdir; nereye fırlatırsan oraya gider.
 Ordu o yönde fırlar ve önüne çıkan toprağı alır. Sürükleme uzunluğu menzili,
 kenar çubuğundaki *Sefer Gücü* ise kaç asker göndereceğini belirler.
 
+Telefonda da aynı: **tek parmak** kendi toprağından başlarsa ordu fırlatır,
+başka yerden başlarsa haritayı kaydırır. **İki parmak** her zaman yakınlaştırır.
+Sağ üstteki ± düğmeleri ve haritayı sığdırma düğmesi de var. Yan panel dar
+ekranda alttan açılan bir çekmeceye dönüşür; kapalıyken *Sefer Gücü* hep
+görünür kalır, koluna dokununca krallıklar ve Divan açılır.
+
 | Mekanik | Nasıl işler |
 |---|---|
 | **İlerledikçe erime** | Her alınan hücre asker yer. Ova ucuz, orman ×1.55, dağ ×2.60. Kalenin yakını daha da pahalı. Ordu toprak kazanır ama küçülür. |
@@ -56,17 +62,40 @@ npm start          # http://localhost:8080
 Sunucusuz da açılır, ancak ES modülleri `file://` üzerinden CORS'a takılır —
 statik bir sunucu gerekir.
 
+### Tek dosyalık sürüm
+
+```bash
+npm run build
+```
+
+`dist/realbattle.html` — dört modülün ve CSS'in tek dosyaya paketlenmiş,
+kendi başına açılan hâli (~70 KB). Hiçbir dış bağımlılığı yok; telefona
+kopyalayıp ya da herhangi bir statik yere koyup açabilirsin.
+`dist/artifact.html` ise `<head>`'i kendi sağlayan ortamlar için yalnız
+gövde içeriğini taşır.
+
 ## Test
 
 ```bash
-npm test           # başsız simülasyon testleri (25)
-npm run test:browser   # gerçek tarayıcıda fare etkileşimi (19)
+npm test               # başsız simülasyon (25)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (19)
+npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```
 
 `npm test` hiçbir tarayıcı gerektirmez: `js/sim.js` tamamen DOM'suzdur ve
-Node'da doğrudan koşar. Tarayıcı testi Playwright ile gerçek bas–sürükle–bırak
-yapar ve `.shots/` altına ekran görüntüsü bırakır.
+Node'da doğrudan koşar. Tarayıcı testleri Playwright ile gerçek
+bas–sürükle–bırak yapar; telefon testi CDP üzerinden çok parmaklı dokunma
+göndererek kaydırmayı ve iki parmakla yakınlaştırmayı da doğrular. İkisi de
+`.shots/` altına ekran görüntüsü bırakır.
+
+Testler paketlenmiş sürüme karşı da koşturulabilir — kaynakla birebir aynı
+davrandığını doğrular:
+
+```bash
+PAGE=/dist/realbattle.html npm run test:browser
+PAGE=/dist/realbattle.html npm run test:mobile
+```
 
 ---
 
@@ -76,12 +105,13 @@ Kod bilerek **kural / çizim** olarak ikiye ayrıldı; çok oyunculuya geçişte
 simülasyon katmanı olduğu gibi sunucuya taşınacak.
 
 ```
-js/world.js    Harita üretimi. Seed'den deterministik: arazi, bölgeler, şehirler.
-js/sim.js      Oyunun bütün kuralları. DOM yok, Math.random yok, Date yok.
-               Tek giriş noktası: createSim(seed) + step(dt, realDt).
-js/render.js   Canvas çizimi. Simülasyonu sadece okur, asla değiştirmez.
-js/game.js     İstemci: girdi, arayüz, ana döngü.
-server/        Şimdilik yalnız statik sunucu. Otoriter oyun sunucusu buraya.
+js/world.js       Harita üretimi. Seed'den deterministik: arazi, bölgeler, şehirler.
+js/sim.js         Oyunun bütün kuralları. DOM yok, Math.random yok, Date yok.
+                  Tek giriş noktası: createSim(seed) + step(dt, realDt).
+js/render.js      Canvas çizimi. Simülasyonu sadece okur, asla değiştirmez.
+js/game.js        İstemci: girdi (fare + dokunma), arayüz, ana döngü.
+scripts/bundle.mjs  Tek dosyalık sürümü üretir.
+server/           Şimdilik yalnız statik sunucu. Otoriter oyun sunucusu buraya.
 ```
 
 Rastgelelik `mulberry32` ile seed'e bağlıdır, zaman dışarıdan `dt` olarak

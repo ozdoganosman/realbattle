@@ -44,7 +44,7 @@ const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-await page.goto(base + '/index.html', { waitUntil: 'networkidle' });
+await page.goto(base + (process.env.PAGE || '/index.html'), { waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
 
 console.log('\nAçılış');

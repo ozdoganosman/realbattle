@@ -32,9 +32,18 @@
       </div>
       <div id="log"></div>
       <div id="hint-bar">Kendi toprağından <b>bas–sürükle–bırak</b>: ordu o yöne fırlar.</div>
+      <div id="zoom-ctl">
+        <button id="zoom-in" title="Yakınlaştır">+</button>
+        <button id="zoom-out" title="Uzaklaştır">−</button>
+        <button id="zoom-fit" title="Haritayı sığdır">⤢</button>
+      </div>
     </div>
 
     <div id="panel">
+      <button id="drawer" aria-expanded="false">
+        <span class="grip"></span>
+        <span id="drawer-label">Krallıklar ve Divan</span>
+      </button>
       <div class="sec">
         <div class="sec-h">Sefer Gücü</div>
         <input id="pct" type="range" min="10" max="95" value="55">
@@ -48,7 +57,7 @@
 
       <div class="sec">
         <div class="sec-h">Bölge</div>
-        <div id="region-info" class="dim-i">İncelemek için haritaya tıkla.</div>
+        <div id="region-info" class="dim-i">İncelemek için bir bölge seç.</div>
       </div>
 
       <div class="sec grow">

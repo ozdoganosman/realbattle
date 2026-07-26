@@ -28,24 +28,120 @@ const ui = {
   now: 0,
 };
 
-// ------------------------------------------------------------------ ölçekleme
+// ------------------------------------------------------------------ görünüm
+
+const stage = $('stage');
+const wrap = $('map-wrap');
+const view = { scale: 1, tx: 0, ty: 0 };
+
+function isNarrow() { return window.innerWidth <= 860; }
+
+// Görünür harita alanı — map-wrap'in DOLGU HARİÇ kutusu. Dar ekranda alttaki
+// çekmece için ayrılan dolgu görünür alan değildir; kaydırma sınırları da
+// bu kutuya göre hesaplanmalı.
+function wrapBox() {
+  const r = wrap.getBoundingClientRect();
+  const cs = getComputedStyle(wrap);
+  const pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+  const pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0;
+  return {
+    left: r.left + pl, top: r.top + pt,
+    width: r.width - pl - pr, height: r.height - pt - pb,
+  };
+}
+
+// Sahnenin dönüşümsüz (flex ile ortalanmış) konumu. Uygulanmış dönüşümden
+// geri hesaplanamaz: clampView, view.tx güncellendikten AMA DOM'a yazılmadan
+// önce çalışır; o anda okunan dikdörtgen hâlâ eski dönüşümü taşır. Bu yüzden
+// dönüşümü geçici olarak kaldırıp doğrudan ölçüyoruz.
+const base = { left: 0, top: 0 };
+function measureBase() {
+  const prev = stage.style.transform;
+  stage.style.transform = 'none';
+  const r = stage.getBoundingClientRect();
+  base.left = r.left; base.top = r.top;
+  stage.style.transform = prev;
+}
 
 function fitStage() {
-  const wrap = $('map-wrap');
-  const pad = 16;
-  const aw = wrap.clientWidth - pad * 2;
-  const ah = wrap.clientHeight - pad * 2 - 26;
-  const scale = Math.min(aw / (W * S), ah / (H * S));
-  const st = $('stage');
-  st.style.width = W * S * scale + 'px';
-  st.style.height = H * S * scale + 'px';
+  const b = wrapBox();
+  const s = Math.min(b.width / (W * S), b.height / (H * S));
+  stage.style.width = W * S * s + 'px';
+  stage.style.height = H * S * s + 'px';
+  measureBase();
+  applyView();
 }
-window.addEventListener('resize', fitStage);
 
-function cellFromEvent(e) {
+function baseOrigin() { return base; }
+
+function clampView() {
+  const bw = stage.offsetWidth * view.scale;
+  const bh = stage.offsetHeight * view.scale;
+  const wr = wrapBox();
+  const b = baseOrigin();
+  const fit = (base, size, wrapStart, wrapSize, t) => {
+    if (size <= wrapSize) return wrapStart + (wrapSize - size) / 2 - base;
+    return clamp(t, wrapStart + wrapSize - size - base, wrapStart - base);
+  };
+  view.tx = fit(b.left, bw, wr.left, wr.width, view.tx);
+  view.ty = fit(b.top, bh, wr.top, wr.height, view.ty);
+}
+
+function applyView() {
+  clampView();
+  stage.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+}
+
+// (u,v) = sahne içeriğine göre 0..1 konum; onu ekranda (sx,sy)'de tut.
+function anchorAt(u, v, sx, sy, newScale) {
+  const b = baseOrigin();
+  view.scale = newScale;
+  view.tx = sx - b.left - u * stage.offsetWidth * newScale;
+  view.ty = sy - b.top - v * stage.offsetHeight * newScale;
+  applyView();
+}
+
+function contentPoint(sx, sy) {
+  const b = baseOrigin();
+  return {
+    u: (sx - b.left - view.tx) / (stage.offsetWidth * view.scale),
+    v: (sy - b.top - view.ty) / (stage.offsetHeight * view.scale),
+  };
+}
+
+function zoomBy(factor) {
+  const wr = wrapBox();
+  const cx = wr.left + wr.width / 2, cy = wr.top + wr.height / 2;
+  const p = contentPoint(cx, cy);
+  anchorAt(p.u, p.v, cx, cy, clamp(view.scale * factor, 1, 9));
+}
+
+// oyuncunun başkentine odaklan (dar ekranda başlangıç görünümü)
+function focusCapital() {
+  const me = sim.nations[sim.playerId];
+  if (!me) return;
+  const cap = sim.world.cities[me.capital];
+  const wr = wrapBox();
+  anchorAt(cap.x / W, cap.y / H, wr.left + wr.width / 2, wr.top + wr.height / 2,
+    isNarrow() ? 3.4 : 1);
+}
+
+window.addEventListener('resize', fitStage);
+$('zoom-in').onclick = () => zoomBy(1.45);
+$('zoom-out').onclick = () => zoomBy(1 / 1.45);
+$('zoom-fit').onclick = () => { view.scale = 1; applyView(); };
+
+mapCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = contentPoint(e.clientX, e.clientY);
+  anchorAt(p.u, p.v, e.clientX, e.clientY,
+    clamp(view.scale * (e.deltaY < 0 ? 1.18 : 1 / 1.18), 1, 9));
+}, { passive: false });
+
+function cellFromPoint(sx, sy) {
   const r = mapCanvas.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width * W;
-  const y = (e.clientY - r.top) / r.height * H;
+  const x = (sx - r.left) / r.width * W;
+  const y = (sy - r.top) / r.height * H;
   return { x, y, cx: clamp(x | 0, 0, W - 1), cy: clamp(y | 0, 0, H - 1) };
 }
 
@@ -73,45 +169,100 @@ function dragWarning(d) {
   return [...foes].slice(0, 2).join('  ·  ');
 }
 
-mapCanvas.addEventListener('mousedown', e => {
-  if (!ui.started || sim.over || e.button !== 0) return;
+// Tek işaretçi (fare ya da tek parmak):
+//   kendi toprağından başlarsa → ordu fırlatma
+//   başka yerden başlarsa      → haritayı kaydırma
+// İki parmak: her zaman yakınlaştırma + kaydırma.
+
+const ptrs = new Map();
+let pan = null, pinch = null;
+
+function startLaunch(sx, sy) {
   const me = sim.nations[sim.playerId];
-  const p = cellFromEvent(e);
+  const p = cellFromPoint(sx, sy);
   const c = idx(p.cx, p.cy);
   ui.selected = c;
   refreshRegion();
-  if (sim.owner[c] !== me.id) return;
+  if (sim.owner[c] !== me.id) return false;
   if (locked(sim, me)) {
     flashHint(`İhanet cezası sürüyor — ${Math.ceil(me.lockUntil - sim.realT)} sn saldıramazsın`);
-    return;
+    return false;
   }
   ui.drag = { active: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y, troops: 0, warn: '', blocked: false };
-});
+  return true;
+}
 
-window.addEventListener('mousemove', e => {
-  const d = ui.drag;
-  if (!d || !d.active) return;
-  const p = cellFromEvent(e);
-  d.x1 = p.x; d.y1 = p.y;
-  const me = sim.nations[sim.playerId];
-  d.troops = me.pool * ui.pct;
-  d.warn = dragWarning(d);
-  d.blocked = d.warn.startsWith('⛔');
-});
-
-window.addEventListener('mouseup', () => {
+function endLaunch() {
   const d = ui.drag;
   ui.drag = null;
   if (!d || !d.active) return;
   const me = sim.nations[sim.playerId];
   const dx = d.x1 - d.x0, dy = d.y1 - d.y0;
   const len = Math.hypot(dx, dy);
-  if (len < 2.5) return;                        // kazara tık
+  if (len < 2.5) return;                        // kazara dokunuş
   const troops = me.pool * ui.pct;
   if (troops < 20) { flashHint('Yeterli asker yok'); return; }
-  const army = launchArmy(sim, me, d.x0, d.y0, dx, dy, troops, len);
-  if (army) refreshTop();
+  if (launchArmy(sim, me, d.x0, d.y0, dx, dy, troops, len)) refreshTop();
+}
+
+function beginPinch() {
+  ui.drag = null; pan = null;
+  const [a, b] = [...ptrs.values()];
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  pinch = {
+    dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+    scale: view.scale,
+    ...contentPoint(mx, my),
+  };
+}
+
+mapCanvas.addEventListener('pointerdown', e => {
+  if (!ui.started || sim.over) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  mapCanvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (ptrs.size === 2) { beginPinch(); return; }
+  if (ptrs.size > 2) return;
+
+  if (!startLaunch(e.clientX, e.clientY))
+    pan = { sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty };
 });
+
+mapCanvas.addEventListener('pointermove', e => {
+  const rec = ptrs.get(e.pointerId);
+  if (rec) { rec.x = e.clientX; rec.y = e.clientY; }
+
+  if (pinch && ptrs.size >= 2) {
+    const [a, b] = [...ptrs.values()];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    anchorAt(pinch.u, pinch.v, mx, my, clamp(pinch.scale * (d / pinch.dist), 1, 9));
+    return;
+  }
+  if (pan) {
+    view.tx = pan.tx + (e.clientX - pan.sx);
+    view.ty = pan.ty + (e.clientY - pan.sy);
+    applyView();
+    return;
+  }
+  const d = ui.drag;
+  if (!d || !d.active) return;
+  const p = cellFromPoint(e.clientX, e.clientY);
+  d.x1 = p.x; d.y1 = p.y;
+  d.troops = sim.nations[sim.playerId].pool * ui.pct;
+  d.warn = dragWarning(d);
+  d.blocked = d.warn.startsWith('⛔');
+});
+
+function endPointer(e) {
+  ptrs.delete(e.pointerId);
+  if (pinch) { if (ptrs.size < 2) pinch = null; return; }
+  if (pan) { pan = null; return; }
+  endLaunch();
+}
+mapCanvas.addEventListener('pointerup', endPointer);
+mapCanvas.addEventListener('pointercancel', endPointer);
 
 function flashHint(text) {
   const el = $('hint-bar');
@@ -157,7 +308,7 @@ function refreshRegion() {
   const el = $('region-info');
   const c = ui.selected;
   if (c < 0 || !sim.world.isLand[c]) {
-    el.innerHTML = '<span class="dim-i">İncelemek için karaya tıkla.</span>';
+    el.innerHTML = '<span class="dim-i">İncelemek için bir bölge seç.</span>';
     return;
   }
   const reg = sim.world.regions[sim.world.regionOf[c]];
@@ -339,7 +490,7 @@ function refreshInbox() {
 function refreshLog() {
   if (sim.events.length === ui.lastLogLen) return;
   ui.lastLogLen = sim.events.length;
-  const last = sim.events.slice(-7);
+  const last = sim.events.slice(isNarrow() ? -4 : -7);
   $('log').innerHTML = last
     .map((e, i) => `<div class="ev ${e.tip} ${i < last.length - 3 ? 'old' : ''}">${e.metin}</div>`)
     .join('');
@@ -379,7 +530,25 @@ function start(id) {
   ui.started = true;
   log(sim, `👑 ${sim.nations[id].name} tahtına oturdun`, 'info');
   fitStage();
+  focusCapital();
   refreshTop(); refreshDiplo(); refreshInbox();
+  if (isNarrow())
+    flashHint('Kendi toprağından sürükle · boş yerden kaydır · iki parmakla yakınlaştır');
+}
+
+// dar ekranda yan panel alttan açılan çekmeceye dönüşür
+const drawer = $('drawer');
+drawer.onclick = () => {
+  const open = $('panel').classList.toggle('open');
+  drawer.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
+
+function refreshDrawer() {
+  const n = sim.pendingCalls.filter(c => c.target === sim.playerId).length
+    + sim.playerOffers.peace.size + sim.playerOffers.ally.size;
+  $('drawer-label').innerHTML = n
+    ? `Krallıklar ve Divan <span class="badge">${n}</span>`
+    : 'Krallıklar ve Divan';
 }
 
 function showEnd() {
@@ -407,7 +576,10 @@ function frame(now) {
     step(sim, realDt * ui.speed, realDt);
     uiTimer += realDt;
     diploTimer += realDt;
-    if (uiTimer > 0.2) { uiTimer = 0; refreshTop(); refreshLog(); refreshInbox(); refreshRegion(); }
+    if (uiTimer > 0.2) {
+      uiTimer = 0;
+      refreshTop(); refreshLog(); refreshInbox(); refreshRegion(); refreshDrawer();
+    }
     if (diploTimer > 1.0) { diploTimer = 0; refreshDiplo(); }
   }
   if (sim.over) showEnd();
@@ -421,7 +593,7 @@ function frame(now) {
 
 // hata ayıklama / otomatik test tutamağı
 window.__rb = {
-  sim, ui, W, H, S,
+  sim, ui, view, W, H, S, focusCapital, fitStage,
   api: { launchArmy, declareWar, makePeace, formAlliance, breakAlliance, answerCall, power },
 };
 

@@ -28,7 +28,10 @@ body {
   padding: 0 14px;
   border-bottom: 2px solid #6b5335;
   font-size: 15px;
+  flex-wrap: nowrap;
 }
+.tb-left { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.tb-right { display: flex; align-items: center; flex-shrink: 0; }
 .tb-item { margin-right: 20px; white-space: nowrap; }
 #tb-nation { font-weight: bold; letter-spacing: .6px; font-size: 16px; }
 #tb-date { font-style: italic; font-size: 16px; opacity: .9; }
@@ -49,18 +52,39 @@ body {
   background: radial-gradient(#25403a, #131e1c 78%);
   overflow: hidden;
 }
-#stage { position: relative; box-shadow: 0 0 40px rgba(0,0,0,.55); }
+#stage {
+  position: relative;
+  z-index: 1;
+  transform-origin: 0 0;
+  box-shadow: 0 0 40px rgba(0,0,0,.55);
+  will-change: transform;
+}
 #stage canvas {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   display: block;
   image-rendering: pixelated;
 }
-#map { cursor: crosshair; }
+#map { cursor: crosshair; touch-action: none; }
 #fx { pointer-events: none; }
 
+#zoom-ctl {
+  position: absolute; right: 10px; top: 10px; z-index: 3;
+  display: flex; flex-direction: column; gap: 5px;
+}
+#zoom-ctl button {
+  width: 36px; height: 36px;
+  font-family: inherit; font-size: 18px; line-height: 1;
+  background: rgba(28,20,10,.7); color: #ecdcb2;
+  border: 1px solid #6b5335; border-radius: 6px; cursor: pointer;
+}
+#zoom-ctl button:hover { background: rgba(60,44,22,.85); }
+
+/* çekmece kolu yalnız dar ekranda görünür */
+#drawer { display: none; }
+
 #log {
-  position: absolute; left: 12px; top: 10px;
+  position: absolute; left: 12px; top: 10px; z-index: 2;
   font-size: 13px; pointer-events: none; max-width: 42%;
 }
 #log .ev {
@@ -75,7 +99,7 @@ body {
 #log .ev.death { color: #ff8f8f; font-weight: bold; }
 
 #hint-bar {
-  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 2;
   background: rgba(20,14,6,.72); color: #ecdcb2;
   padding: 5px 14px; border-radius: 14px; font-size: 13px;
   pointer-events: none; white-space: nowrap;
@@ -186,3 +210,81 @@ button.mini.bad { background: #a3452f; border-color: #7c2f1e; color: #fff; }
   border: 1px solid #5c4726; border-radius: 6px; cursor: pointer;
 }
 #end-box p { margin: 12px 0 20px; font-size: 15px; }
+
+/* ============================================================ dar ekran */
+@media (max-width: 860px) {
+  #topbar { height: 40px; padding: 0 6px; font-size: 12.5px; }
+  .tb-item { margin-right: 9px; }
+  #tb-nation { font-size: 13px; }
+  .tb-mid { display: none; }
+  .tb-item .dim { display: none; }        /* asker tavanı dar ekranda gizli */
+  .spd { padding: 5px 7px; margin-left: 2px; font-size: 11px; }
+
+  #main { flex-direction: column; }
+  #map-wrap { padding-bottom: 104px; }
+
+  #log { font-size: 11.5px; max-width: 62%; left: 8px; top: 6px; }
+  #hint-bar { font-size: 11.5px; bottom: 112px; padding: 5px 10px; white-space: normal; max-width: 92%; text-align: center; }
+  #zoom-ctl { right: 7px; top: 7px; }
+  #zoom-ctl button { width: 42px; height: 42px; font-size: 20px; }
+
+  /* yan panel → alttan açılan çekmece */
+  #panel {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    width: 100%; height: auto;
+    max-height: 104px;
+    border-left: none; border-top: 3px solid var(--edge);
+    border-radius: 12px 12px 0 0;
+    transition: max-height .26s ease;
+    box-shadow: 0 -6px 24px rgba(0,0,0,.45);
+    z-index: 5;
+  }
+  #panel.open { max-height: 72vh; overflow-y: auto; }
+
+  #drawer {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    width: 100%; padding: 7px 0 3px;
+    background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 12px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--dim);
+    position: sticky; top: 0; background: var(--panel); z-index: 2;
+  }
+  #drawer .grip {
+    width: 42px; height: 4px; border-radius: 3px; background: #b39a68;
+  }
+  #panel.open #drawer .grip { background: #8a6f4d; }
+  .badge {
+    display: inline-block; min-width: 17px; padding: 0 5px;
+    background: #b3452f; color: #fff; border-radius: 9px;
+    font-size: 11px; letter-spacing: 0;
+  }
+
+  /* kapalıyken yalnız sefer gücü görünür */
+  .sec { padding: 7px 12px 10px; }
+  #panel:not(.open) #sec-inbox,
+  #panel:not(.open) .sec:nth-of-type(3),
+  #panel:not(.open) .sec.grow { display: none; }
+
+  #pct { height: 26px; }
+  .pct-label { font-size: 13px; }
+
+  /* parmakla basılabilir hedefler */
+  button.mini { font-size: 13px; padding: 6px 12px; }
+  button.act { padding: 10px; font-size: 14px; }
+  .nat-row { padding: 7px 6px; font-size: 14px; }
+  .acts { gap: 7px; }
+
+  #start-box, #end-box { padding: 18px 16px; margin: 8px; max-height: 94vh; }
+  #start-box h1, #end-box h1 { font-size: 30px; letter-spacing: 2px; }
+  #start-box .sub { font-size: 13px; margin-bottom: 10px; }
+  .rules { font-size: 12px; padding: 9px 11px; }
+  .goal { font-size: 13.5px; }
+  #nation-list { grid-template-columns: repeat(2, 1fr); }
+  .nation-btn { padding: 9px; font-size: 13px; }
+}
+
+@media (max-width: 860px) and (orientation: landscape) {
+  #map-wrap { padding-bottom: 96px; }
+  #panel.open { max-height: 82vh; }
+  #nation-list { grid-template-columns: repeat(4, 1fr); }
+}
