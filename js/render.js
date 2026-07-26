@@ -65,6 +65,18 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
         const f = TERRAIN_SHADE[terrain[i]] * (0.96 + shade[i] * 0.08);
         r = c[0] * f + grain; g = c[1] * f + grain; b = c[2] * f + grain;
 
+        // Kuşatma altındaki hücre saldıranın rengine doğru KAYAR: cephenin
+        // tamamı aynı anda ilerlediği için az asker sürmek sınırı boydan boya
+        // hafifçe boyar. Üs 0.7, ilk dilimleri de görünür kılmak için.
+        const pr = sim.prog[i];
+        if (pr > 0.01) {
+          const by = sim.progBy[i];
+          if (by >= 0 && by !== o) {
+            const d = pal[by], k = Math.pow(pr, 0.7);
+            r += (d[0] * f - r) * k; g += (d[1] * f - g) * k; b += (d[2] * f - b) * k;
+          }
+        }
+
         // hedefin üstündeyken bütün toprağı aydınlansın
         if (hover !== undefined && o === hover) { r += 46; g += 46; b += 46; }
 

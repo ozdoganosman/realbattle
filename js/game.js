@@ -274,9 +274,8 @@ function tapAttack(sx, sy) {
     let mesaj;
     if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
       mesaj = 'Bu cephe zaten açık';
-    } else if (commitOf(me) < attackCost(sim, target)) {
-      mesaj = `Tek hücre bile ${fmt(attackCost(sim, target))} askere geliyor `
-            + '— saldırı gücünü yükselt';
+    } else if (commitOf(me) < attackCost(sim, target) * 0.02) {
+      mesaj = 'Bu kadar az askerle cephe kıpırdamaz — saldırı gücünü yükselt';
     } else {
       mesaj = 'Sınırın buraya değmiyor';
     }
@@ -348,7 +347,7 @@ function frontMap() {
 // olduğundan kaydıraç ne diyorsa o gider — arayüz artık yuvarlamıyor.
 function gidecek(me, target) {
   const istenen = commitOf(me);
-  return istenen >= attackCost(sim, target) ? istenen : 0;
+  return istenen >= attackCost(sim, target) * 0.02 ? istenen : 0;
 }
 
 function refreshPct() {
@@ -364,8 +363,8 @@ function refreshPct() {
   let pay = '';
   if (enUcuz < Infinity && enUcuz > 0) {
     const k = troops / enUcuz;
-    pay = k >= 1 ? ` <span class="floor">· cepheyi ${k.toFixed(1)}× iter</span>`
-                 : ` <span class="floor">· cephenin %${Math.round(k * 100)}'i</span>`;
+    pay = k >= 1 ? ` <span class="floor">· sınırı ${k.toFixed(1)} hücre iter</span>`
+                 : ` <span class="floor">· sınırı %${Math.round(k * 100)} kuşatır</span>`;
   }
   $('pct-label').innerHTML =
     `<b>${fmt(troops)}</b> asker` + pay +

@@ -405,6 +405,36 @@ check('yazan asker ile giden asker aynı', await page.evaluate(async () => {
   return Math.abs(atk.start - yazan) <= Math.max(2, yazan * 0.02);
 }));
 
+// Kısmi kuşatma haritada GÖRÜNMELİ: hiçbir hücre el değiştirmese bile cephe
+// boyunca renk saldıranın rengine kayar. Yoksa küçük hamle "hiçbir şey
+// olmadı" gibi hissettiriyor.
+check('kısmi kuşatma haritada renk olarak görünüyor', await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  window.__rb.ui.speed = 0;
+  const me = sim.nations[sim.playerId];
+  sim.attacks.length = 0; me.lockUntil = 0;
+  sim.prog.fill(0); sim.progBy.fill(-1);
+  me.pool = api.hardCap(sim, me);
+  const cv = document.getElementById('map');
+  const ctx = cv.getContext('2d');
+  const kare = () => ctx.getImageData(0, 0, cv.width, cv.height).data;
+  sim.dirty = true;
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const once = kare();
+  const hucreOnce = me.cells;
+  api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 0.3);
+  window.__rb.ui.speed = 1;
+  await new Promise(r => setTimeout(r, 900));
+  window.__rb.ui.speed = 0;
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const sonra = kare();
+  let degisen = 0;
+  for (let i = 0; i < once.length; i += 4)
+    if (Math.abs(once[i] - sonra[i]) + Math.abs(once[i + 1] - sonra[i + 1]) > 12) degisen++;
+  // hücre el değiştirmeden bile yüzlerce piksel değişmiş olmalı
+  return degisen > 200 && me.cells === hucreOnce;
+}));
+
 check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));
 check('ses düğmesi sesi kapatıp açıyor', await page.evaluate(async () => {
   const b = document.getElementById('btn-sound');

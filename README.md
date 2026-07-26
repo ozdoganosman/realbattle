@@ -16,8 +16,8 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 
 | Mekanik | Nasıl işler |
 |---|---|
-| **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler; halkalar hücre hücre tüketilir ama uzamsal sıraya dizildikleri için ilerleme dağınık benek değil bitişik bir yaydır. Yeterli askerle halka kapanır ve sınır her yerde aynı derinliğe gelir. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **En küçük hamle** | Tek hücre. Kaydıraç istediğin kadar ince dilinir; cephenin %10'u kadar asker sürmek de geçerli bir hamledir. Kaydıracın altındaki yazı gidecek askeri ve bunun cephenin yüzde kaçını iteceğini söyler (ör. *cephenin %25'i* ya da *cepheyi 3.2× iter*). Yarım kalan halka dağınık benek bırakmaz: halkalar uzamsal sıralandığı için alınan hücreler tek parça bir yay olur. |
+| **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler ve bütçe halkanın bütün hücrelerine **eşit** dağıtılır: her hücrenin kuşatma ilerlemesi aynı anda, aynı hızda artar. Hücre ancak ilerlemesi dolunca el değiştirir, yani sınır her yerde birlikte hareket eder — sıra sıra tek hücre düşen fermuar ya da dağınık benek görüntüsü yok. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
+| **Kuşatma birikir** | Hamle istediğin kadar ince dilinir. Cephenin %25'i kadar asker sürersen hiçbir hücre el değiştirmez ama bütün sınır senin rengine doğru %25 kayar — ve bu ilerleme **kalıcıdır**. Dört küçük hamle bir büyük hamle eder, toplam bedel aynıdır. Kaydıracın altındaki yazı gücün sınırı ne kadar kuşattığını söyler (*sınırı %25 kuşatır* / *sınırı 3.2 hücre iter*). |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** — oran toprak payıyla yükselir ve aralık geniştir: bir avuç toprakla tik başına ~**%2.4**, kıtaya hükmederken ~**%28** (açılışta ayrıca 1.9 kat hızlı). Küçükken ekonomi sürünür, büyüdükçe uçar. Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs neredeyse 1 (toprak iki katına çıkınca ödeme ~2.04 kat), yani büyümek kendini az besler ve lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
@@ -68,7 +68,7 @@ ortamlar için yalnız gövde içeriğini taşır.
 
 ```bash
 npm test               # başsız simülasyon (62)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (45)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (46)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

@@ -296,66 +296,66 @@ t('dalga sınırın her yerinde aynı anda ilerler', () => {
     'dalga sınırın yalnız bir bölümünde ilerlemiş');
 });
 
-// En küçük hamle TEK hücredir — kaydıraç istediği kadar ince dilinebilir.
-// Ama yarım kalan halka sınırda dağınık benek bırakmamalı: halkalar uzamsal
-// sıralandığı için alınan hücreler tek parça bir yay olur.
-function bilesenSayisi(s, hucreler) {
-  const kume = new Set(hucreler);
-  let n = 0;
-  while (kume.size) {
-    n++;
-    const bas = kume.values().next().value;
-    const yigin = [bas];
-    kume.delete(bas);
-    while (yigin.length) {
-      const c = yigin.pop();
-      const x = c % W, y = (c / W) | 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const k = idx(nx, ny);
-        if (kume.has(k)) { kume.delete(k); yigin.push(k); }
-      }
-    }
+// Cephenin TAMAMI aynı anda ilerler: bütçe bütün sınır hücrelerine eşit
+// dağıtılır, hücre ancak kuşatma ilerlemesi dolunca el değiştirir. Böylece
+// az asker sürmek sınırı boydan boya biraz iter — bir bölümünü çok değil.
+function sinirHucreleri(s, nat, target) {
+  const out = [];
+  for (let c = 0; c < W * H; c++) {
+    if (s.owner[c] !== target) continue;
+    if (target < 0 && !s.world.isLand[c]) continue;
+    const x = c % W;
+    const nb = [];
+    if (x > 0) nb.push(c - 1);
+    if (x < W - 1) nb.push(c + 1);
+    if (c >= W) nb.push(c - W);
+    if (c < W * (H - 1)) nb.push(c + W);
+    if (nb.some(n => s.owner[n] === nat.id)) out.push(c);
   }
-  return n;
+  return out;
 }
 
-t('çok küçük hamle de yapılabilir — en az tek hücre', () => {
+t('küçük hamle bütün sınırı eşit ilerletir', () => {
   const g = genisSinirliSim();
   if (!g) return;
   const { s, nat } = g;
+  const sinir = sinirHucreleri(s, nat, -1);
   const cephe = frontCost(s, nat, -1);
-  const birim = attackCost(s, -1);
-  const once = nat.cells;
-  // cephenin yüzde ONU kadar asker: eski kuralda hiç başlamazdı
-  const a = startAttack(s, nat, -1, cephe * 0.1);
-  assert(a, 'küçük hamle başlamadı');
-  assert(Math.abs(a.start - cephe * 0.1) < birim,
-    `hamle yuvarlandı: ${a.start.toFixed(0)} istendi ${(cephe * 0.1).toFixed(0)}`);
+  startAttack(s, nat, -1, cephe * 0.25);        // çeyrek halka
   for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
-  const alinan = nat.cells - once;
-  assert(alinan > 0 && alinan < cephe / birim,
-    `beklenen kısmi ilerleme, ${alinan} hücre alındı`);
+  const p = sinir.map(c => s.prog[c]);
+  const enAz = Math.min(...p), enCok = Math.max(...p);
+  assert(enAz > 0.15, `sınırın bir kısmı hiç ilerlememiş (en az ${enAz.toFixed(2)})`);
+  assert(enCok - enAz < 0.08,
+    `ilerleme eşit değil: ${enAz.toFixed(2)} ile ${enCok.toFixed(2)} arası`);
+  assert(nat.cells === g.nat.cells, 'çeyrek hamlede hücre el değiştirmemeli');
 });
 
-t('yarım kalan halka dağınık benek değil, tek parça yay bırakır', () => {
+t('art arda küçük hamleler birikip halkayı düşürür', () => {
   const g = genisSinirliSim();
   if (!g) return;
   const { s, nat } = g;
+  const once = nat.cells;
   const cephe = frontCost(s, nat, -1);
-  const oncekiler = new Set();
-  for (let c = 0; c < W * H; c++) if (s.owner[c] === nat.id) oncekiler.add(c);
-  startAttack(s, nat, -1, cephe * 0.25);
+  // dörtte birlik dört hamle = bir halka
+  for (let k = 0; k < 4; k++) {
+    nat.pool = hardCap(s, nat);
+    startAttack(s, nat, -1, cephe * 0.26);
+    for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
+  }
+  assert(nat.cells > once,
+    `biriken ilerleme hiç toprak getirmedi (${once} → ${nat.cells})`);
+});
+
+t('bir hücre dolmadan el değiştirmez', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  startAttack(s, nat, -1, frontCost(s, nat, -1) * 0.5);
   for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
-  const yeni = [];
   for (let c = 0; c < W * H; c++)
-    if (s.owner[c] === nat.id && !oncekiler.has(c)) yeni.push(c);
-  assert(yeni.length > 4, `çok az hücre alındı (${yeni.length})`);
-  const parca = bilesenSayisi(s, yeni);
-  assert(parca <= 2,
-    `${yeni.length} hücre ${parca} ayrı parçaya dağılmış — cephe benekli`);
+    assert(!(s.owner[c] === nat.id && s.prog[c] > 0),
+      'el değişen hücrede kuşatma ilerlemesi kalmış');
 });
 
 // ---------------------------------------------------------------- deniz

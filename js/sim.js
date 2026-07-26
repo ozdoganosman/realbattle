@@ -82,6 +82,11 @@ export function createSim(seed) {
   const sim = {
     world, rnd, owner,
     lastCapture: new Float32Array(W * H).fill(-99),  // hücre ne zaman el değiştirdi
+    // Kuşatma ilerlemesi: bir hücre tek hamlede değil, 0'dan 1'e dolarak el
+    // değiştirir. Böylece cephenin TAMAMI aynı anda ve eşit ilerler; az asker
+    // sürmek sınırı boydan boya biraz ilerletir, bir bölümünü çok değil.
+    prog: new Float32Array(W * H),
+    progBy: new Int16Array(W * H).fill(-1),
     t: 0, realT: 0,
     nations: [], attacks: [], nextAttackId: 1,
     playerId: -1, over: false, won: false,
@@ -287,36 +292,6 @@ export function frontCosts(sim, nat) {
   return out;
 }
 
-// Bir halkayı uzamsal olarak sırala: yan yana hücreler arka arkaya gelsin.
-// Halka satır satır taranarak toplandığı için ham sırası haritada zıplıyor;
-// öyle bırakılırsa yarım kalan bir halka sınır boyunca dağınık benekler
-// bırakır. Zincir yürüyüşü bunu tek parça yaylara çevirir — köşegen de
-// bitişik sayılır ki yay köşelerde kopmasın.
-function siraya(hucreler) {
-  if (hucreler.length < 3) return hucreler;
-  const kalan = new Set(hucreler);
-  const out = [];
-  let c = hucreler[0];
-  while (kalan.size) {
-    if (c === undefined) c = kalan.values().next().value;
-    kalan.delete(c);
-    out.push(c);
-    const x = c % W, y = (c / W) | 0;
-    let sonraki;
-    for (let dy = -1; dy <= 1 && sonraki === undefined; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const n = ny * W + nx;
-        if (kalan.has(n)) { sonraki = n; break; }
-      }
-    }
-    c = sonraki;
-  }
-  return out;
-}
-
 // Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
 // oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
 export function startAttack(sim, nat, targetId, troops) {
@@ -327,13 +302,11 @@ export function startAttack(sim, nat, targetId, troops) {
   const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  // En küçük hamle TEK hücredir: kaydıraç istediği kadar ince dilinebilsin.
-  // Yarım kalan halka noktalı görünmesin diye halkalar uzamsal olarak
-  // sıralanıyor (bkz. siraya) — az asker sınırda dağınık benek değil, tek
-  // parça bir yay açar.
-  if (troops < cost) return null;
+  // En küçük hamle bir hücrenin küçük bir DİLİMİdir: bütçe cephenin bütün
+  // hücrelerine eşit dağıtıldığı için kaydıraç istendiği kadar ince dilinir.
+  if (troops < cost * 0.02) return null;
 
-  const layer = siraya(border);
+  const layer = border;
   const inQ = new Set(layer);
 
   nat.pool -= troops;
@@ -342,7 +315,7 @@ export function startAttack(sim, nat, targetId, troops) {
   const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    troops, start: troops, layer, li: 0, next: [], inQ, acc: 0, rate,
+    troops, start: troops, layer, next: [], inQ, rate,
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -368,6 +341,7 @@ function take(sim, cell, nat) {
     if (def.cells <= 0) kill(sim, def);
   }
   sim.owner[cell] = nat.id;
+  sim.prog[cell] = 0; sim.progBy[cell] = -1;
   sim.lastCapture[cell] = sim.t;
   nat.cells++;
   sim.dirty = true;
@@ -392,54 +366,61 @@ function stepAttacks(sim, dt) {
     const nat = sim.nations[a.from];
     if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
 
-    // Dalga halka halka ilerler ama halkalar hücre hücre tüketilir: kaydıraç
-    // istediği kadar ince dilinebilsin diye yarım halka serbest. Halkalar
-    // uzamsal olarak sıralandığı için yarım kalan halka sınırda dağınık benek
-    // değil TEK PARÇA bir yay bırakır. Bir halkanın toplam süresi yine hücre
-    // sayısıyla orantılı, yani dolu bir cephe hep ~ATTACK_SECS'te kapanır.
-    a.acc += a.rate * dt;
-    let butce = Math.floor(a.acc);
-    if (butce <= 0) continue;
-    a.acc -= butce;
-
+    // Bütçe, sıradaki halkanın BÜTÜN hücrelerine eşit dağıtılır: her hücrenin
+    // kuşatma ilerlemesi aynı anda ve aynı hızda artar. Hücre ancak dolunca
+    // el değiştirir, yani sınır her yerde birlikte ilerler — sıra sıra tek
+    // hücre düşen "fermuar" görüntüsü yok. Halka dolunca sıradakine geçilir.
     const cost = attackCost(sim, a.target);
-    while (butce-- > 0) {
-      if (a.li >= a.layer.length) {          // halka bitti, sıradakine geç
-        if (!a.next.length) { a.layer = []; break; }
-        a.layer = siraya(a.next); a.next = []; a.li = 0;
+    let butce = Math.min(a.rate * dt, a.troops / cost);
+    let bitti = false;
+
+    for (let tur = 0; butce > 1e-9 && tur < 64; tur++) {
+      const canli = a.layer.filter(c => sim.owner[c] === a.target);
+      if (!canli.length) {
+        if (!a.next.length) { bitti = true; break; }
+        a.layer = a.next; a.next = [];
+        continue;
       }
-      const c = a.layer[a.li++];
-      if (sim.owner[c] !== a.target) continue;        // başkası kapmış
-      if (a.troops < cost) { a.troops = 0; break; }
-      a.troops -= cost;
+      const pay = butce / canli.length;
+      let harcanan = 0;
+      const dolan = [];
+      for (const c of canli) {
+        // başka bir ulusun bıraktığı ilerleme devralınmaz
+        if (sim.progBy[c] !== a.from) { sim.prog[c] = 0; sim.progBy[c] = a.from; }
+        const ek = Math.min(pay, 1 - sim.prog[c]);
+        sim.prog[c] += ek;
+        harcanan += ek;
+        if (sim.prog[c] >= 0.999) dolan.push(c);
+      }
+      butce -= harcanan;
+      a.troops -= harcanan * cost;
       if (a.target >= 0) {
         const def = sim.nations[a.target];
-        def.pool = Math.max(0, def.pool - cost * DEF_LOSS);
+        def.pool = Math.max(0, def.pool - harcanan * cost * DEF_LOSS);
       }
-      take(sim, c, nat);
-      a.lastX = c % W; a.lastY = (c / W) | 0;
-      for (const n of nbs(c, tmp)) {
-        // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
-        // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
-        // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
-        // ulus karaya doğru büyüyemez.
-        if (!sim.world.isLand[n]) continue;
-        if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.next.push(n); }
+      if (harcanan > 0) sim.dirty = true;
+      for (const c of dolan) {
+        take(sim, c, nat);
+        a.lastX = c % W; a.lastY = (c / W) | 0;
+        for (const n of nbs(c, tmp)) {
+          // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
+          // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
+          // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
+          // ulus karaya doğru büyüyemez.
+          if (!sim.world.isLand[n]) continue;
+          if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.next.push(n); }
+        }
       }
+      if (!dolan.length) break;         // hiçbir hücre dolmadı, tur ilerlemiyor
     }
 
-    if (a.troops <= 0 || (a.li >= a.layer.length && !a.next.length)) {
-      if (a.troops > 0) deposit(sim, nat, a.troops); // cephe bitti, kalan geri döner
+    if (bitti || a.troops <= cost * 0.01) {
+      if (a.troops > 0) deposit(sim, nat, a.troops);  // cephe bitti, kalan geri döner
       sim.attacks.splice(i, 1);
     }
   }
 }
 
-// ------------------------------------------------------------------ büyüme
-
-// Ödemeler KESİKLİ: her TICK'te faiz, her 10. tikte arazi geliri. Sürekli
-// akıtmak sayıyı yumuşak gösterir ama geri sayılacak bir an bırakmaz —
-// territorial.io'daki gibi belirli anlarda yatması hem doğru hem okunaklı.
 function stepGrowth(sim, dt) {
   sim.tickAcc += dt;
   while (sim.tickAcc >= TICK) {
