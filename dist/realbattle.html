@@ -142,6 +142,7 @@ body {
   overflow: hidden;
 }
 #drawer { display: none; }
+#mini { display: none; }              /* yalnız dar ekranda, çekmece kapalıyken */
 .sec { padding: 11px 13px; border-bottom: 1px solid #cdb894; }
 .sec.grow { flex: 1; overflow-y: auto; }
 .sec-h {
@@ -204,9 +205,13 @@ body {
   width: 100%; height: 30px;
   -webkit-appearance: none; appearance: none; background: none;
 }
+/* Şeridin --borrow-at noktasına kadarı elindeki asker, ötesi borç bölgesi.
+   Eşik hazine değiştikçe kayar. */
 #pct::-webkit-slider-runnable-track {
   height: 8px; border-radius: 4px;
-  background: linear-gradient(90deg, #b39a68, #8a6f3d);
+  background: linear-gradient(90deg,
+    #8a6f3d 0%, #a3814a var(--borrow-at, 100%),
+    #c2603f var(--borrow-at, 100%), #d4573d 100%);
 }
 #pct::-moz-range-track { height: 8px; border-radius: 4px; background: #b39a68; }
 #pct::-webkit-slider-thumb {
@@ -224,10 +229,6 @@ body {
 }
 .pct-label { font-size: 15px; text-align: center; font-variant-numeric: tabular-nums; }
 .pct-label .debt { color: var(--bad); font-weight: bold; }
-/* %100'ü aşınca kaydıracın kendisi de uyarsın */
-#pct.borrowing::-webkit-slider-runnable-track {
-  background: linear-gradient(90deg, #8a6f3d 0%, #8a6f3d 62%, var(--bad) 62%, #d4573d 100%);
-}
 #pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
 #tb-troops.debt { color: #ff8f7a; }
 
@@ -366,10 +367,10 @@ button.mini.bad:hover { background: #cc543b; }
   .spd { padding: 6px 8px; margin-left: 3px; font-size: 11px; }
 
   #main { flex-direction: column; }
-  #map-wrap { padding: 4px; padding-bottom: 104px; }
+  #map-wrap { padding: 4px; padding-bottom: 158px; }
 
   #log { font-size: 11.5px; max-width: 60%; left: 8px; top: 6px; }
-  #hint-bar { font-size: 11.5px; bottom: 112px; max-width: 92%; text-align: center; }
+  #hint-bar { font-size: 11.5px; bottom: 166px; max-width: 92%; text-align: center; }
   #target-chip { font-size: 12px; }
   #zoom-ctl { right: 7px; top: 7px; }
   #zoom-ctl button { width: 42px; height: 42px; font-size: 20px; }
@@ -383,7 +384,43 @@ button.mini.bad:hover { background: #cc543b; }
     box-shadow: 0 -6px 26px rgba(0,0,0,.5);
     z-index: 5;
   }
+  #panel { max-height: 158px; }        /* özet şerit + kaydıraç sığsın */
   #panel.open { max-height: 74vh; overflow-y: auto; }
+
+  /* --- kapalı çekmecenin özet şeridi --- */
+  #panel:not(.open) #mini { display: block; padding: 0 13px 5px; }
+  .mini-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 12px; margin-bottom: 5px;
+  }
+  .mini-cell { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+  .mini-cell .k {
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .mini-cell b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mini-cell b.debt { color: var(--bad); }
+  .mini-cell b.stalled { color: var(--bad); font-weight: normal; }
+  .mini-cell .s { color: var(--dim); font-weight: normal; }
+  .mini-bar {
+    position: relative; height: 7px; border-radius: 4px;
+    background: #d6c39c; overflow: hidden; margin-bottom: 4px;
+    box-shadow: inset 0 1px 2px rgba(90,70,35,.3);
+  }
+  .mini-bar i { display: block; height: 100%; border-radius: 4px; transition: width .25s var(--ease); }
+  .pips.small i { height: 5px; }
+  .mini-front {
+    font-size: 11.5px; color: var(--dim); text-align: center; margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-front b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .mini-front .s { opacity: .7; }
+
+  /* kapalıyken saldırı gücü bölümü sıkışsın ama etiketi kesilmesin */
+  #panel:not(.open) .sec { padding: 4px 13px 6px; border-bottom: none; }
+  #panel:not(.open) .sec-h { display: none; }
+  #panel:not(.open) #pct { height: 28px; }
+  #panel:not(.open) .pct-label { font-size: 13px; }
 
   #drawer {
     display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -417,7 +454,7 @@ button.mini.bad:hover { background: #cc543b; }
 }
 
 @media (max-width: 860px) and (orientation: landscape) {
-  #map-wrap { padding-bottom: 96px; }
+  #map-wrap { padding-bottom: 150px; }
   #panel.open { max-height: 84vh; }
   #nation-list { grid-template-columns: repeat(4, 1fr); }
 }
@@ -461,6 +498,18 @@ button.mini.bad:hover { background: #cc543b; }
         <span id="drawer-label">Krallıklar</span>
       </button>
 
+      <!-- dar ekranda çekmece kapalıyken görünen özet şerit -->
+      <div id="mini">
+        <div class="mini-row">
+          <span class="mini-cell"><span class="k">Asker</span><b id="mini-troops">—</b></span>
+          <span class="mini-cell"><span class="k">Faiz</span><b id="mini-int">—</b></span>
+          <span class="mini-cell"><span class="k">Gelir</span><b id="mini-inc">—</b></span>
+        </div>
+        <div class="mini-bar"><i id="mini-fill"></i><span id="mini-soft" class="cap-mark"></span></div>
+        <div id="mini-pips" class="pips small"></div>
+        <div id="mini-front" class="mini-front hidden"></div>
+      </div>
+
       <div class="sec" id="sec-treasury">
         <div class="sec-h">Hazine</div>
         <div class="cap-bar">
@@ -469,7 +518,8 @@ button.mini.bad:hover { background: #cc543b; }
         </div>
         <div class="econ">
           <span>Bileşik faiz</span><b id="econ-int">—</b>
-          <span>Arazi geliri</span><b id="econ-inc">—</b>
+          <span>Arsa ödemesi</span><b id="econ-inc">—</b>
+          <span>Faiz balonu</span><b id="econ-balloon">—</b>
           <span>Yumuşak tavan</span><b id="econ-soft">—</b>
         </div>
         <div class="cycle">
@@ -480,7 +530,7 @@ button.mini.bad:hover { background: #cc543b; }
 
       <div class="sec">
         <div class="sec-h">Saldırı Gücü</div>
-        <input id="pct" type="range" min="5" max="160" value="50">
+        <input id="pct" type="range" min="5" max="100" value="50">
         <div id="pct-label" class="pct-label"></div>
       </div>
 
@@ -508,7 +558,7 @@ button.mini.bad:hover { background: #cc543b; }
       <div class="rules">
         <div><b>Dokun, yayıl.</b> Bir toprağa dokun — sınırın o tarafa doğru dalga hâlinde ilerler.</div>
         <div><b>Asker bileşik büyür.</b> Mevcut askerin faiz getirir, toprağın ayrıca gelir. Biriktikçe hızlanır.</div>
-        <div><b>Borçlanabilirsin.</b> Saldırı gücünü %100 üstüne çek — elinde olmayanı sürersin, gelir borcu kapatana kadar yeni sefer yok.</div>
+        <div><b>Borçlanabilirsin.</b> Kaydıraç, gönderebileceğin toplam gücün yüzdesi. Hazinen bitse de saldırabilirsin — eksik kısmı borçlanırsın, gelir borcu kapatana kadar yeni sefer yok.</div>
         <div><b>Kalabalık ordu iyi savunur.</b> Askeri toprağına oranla yoğun olana saldırmak pahalıdır.</div>
         <div><b>İttifak kur.</b> Ama bozan <b>20 saniye</b> hiçbir yere saldıramaz.</div>
       </div>
@@ -785,8 +835,14 @@ const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
 const TICK = 0.56;             // faiz periyodu (sn)
 const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
-const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
-const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
+// Genel hız çarpanı.
+const INCOME_SCALE = 3;
+// Arazi geliri toprakla ÜSTEL artar: büyümek kendi kendini besler.
+const INCOME_EXP = 1.18;
+// Gelir tikinde faiz de toplu (balon) ödeme yapar — tik faizinin bu katı.
+const BALLOON = 6;
+const INTEREST_MIN = 0.016 * INCOME_SCALE;   // çok az toprakta tik başına faiz
+const INTEREST_MAX = 0.040 * INCOME_SCALE;   // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
 // asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
 // bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
@@ -800,7 +856,7 @@ const START_MULT = 9;                 // başlangıç askeri = toprak × bu
 // Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
 // önce borcu kapatır, borç da kendi faiziyle büyür — bedava kredi değil.
 const DEBT_MULT = 10;                 // en fazla borç = toprak × bu
-const DEBT_RATE = 0.004;              // borcun tik başına büyümesi
+const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — borçlanmak riskli
 
 // --- saldırı dengesi ---
 // Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
@@ -909,12 +965,26 @@ function interestRate(sim, nat) {
 }
 
 // Borçtayken savunma yoğunluğu negatife düşmesin — bedel tabanın altına inmez.
+// Gelir tikinde yatacak toplu ödeme: arazi geliri (toprakla üstel) artı
+// faizin balon ödemesi. Arayüz bunu okuyup geri sayımın yanında gösterir.
+function incomePayout(sim, nat) {
+  const land = Math.pow(Math.max(0, nat.cells), INCOME_EXP) * INCOME_SCALE;
+  const balloon = Math.max(0, nat.pool) * interestRate(sim, nat) * BALLOON;
+  return { land, balloon, total: land + balloon };
+}
+
 function density(nat) { return Math.max(0, nat.pool) / Math.max(25, nat.cells); }
 
 function maxDebt(sim, nat) { return nat.cells * DEBT_MULT; }
 const inDebt = nat => nat.pool < 0;
 // Bir seferde sürebileceğin en yüksek asker: elindeki + borçlanabileceğin.
 function maxCommit(sim, nat) { return nat.pool + maxDebt(sim, nat); }
+// Havuza yapılan HER ekleme buradan geçmeli. Ekonomi hızlanınca havuz sürekli
+// tavanda duruyor; geri dönen sefer askeri kırpılmazsa tavan aşılıyor.
+function deposit(sim, nat, amount) {
+  nat.pool = Math.min(nat.pool + amount, hardCap(sim, nat));
+}
+
 function power(sim, nat) {
   let onFront = 0;
   for (const a of sim.attacks) if (a.from === nat.id) onFront += a.troops;
@@ -948,7 +1018,7 @@ function breakAlliance(sim, breaker, other) {
   // bozanın o tarafa süren saldırıları da durur
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
     const at = sim.attacks[i];
-    if (at.from === breaker.id) { breaker.pool += at.troops; sim.attacks.splice(i, 1); }
+    if (at.from === breaker.id) { deposit(sim, breaker, at.troops); sim.attacks.splice(i, 1); }
   }
   log(sim, `💔 ${breaker.name} ittifakı bozdu — ${BETRAY_LOCK}sn saldıramaz`, 'betray');
   sim.fx.push({ tip: 'betray', nat: breaker.id });
@@ -1008,7 +1078,7 @@ function startAttack(sim, nat, targetId, troops) {
 function cancelAttack(sim, atk) {
   const i = sim.attacks.indexOf(atk);
   if (i < 0) return;
-  sim.nations[atk.from].pool += atk.troops;   // geri çağrılan asker garnizona döner
+  deposit(sim, sim.nations[atk.from], atk.troops);   // geri çağrılan asker garnizona döner
   sim.attacks.splice(i, 1);
 }
 
@@ -1018,6 +1088,9 @@ function take(sim, cell, nat) {
   if (o >= 0) {
     const def = sim.nations[o];
     def.cells--;
+    // Tavan toprağa bağlı: küçülen ulusun askeri de yeni tavana kırpılmalı,
+    // yoksa toprak kaybeden bir ulus tavanının üstünde asker taşır.
+    if (def.pool > 0) def.pool = Math.min(def.pool, hardCap(sim, def));
     if (def.cells <= 0) kill(sim, def);
   }
   sim.owner[cell] = nat.id;
@@ -1076,7 +1149,7 @@ function stepAttacks(sim, dt) {
     if (took) a.lastX = (a.q[a.qi - 1] % W), a.lastY = ((a.q[a.qi - 1] / W) | 0);
 
     if (a.troops <= 0 || a.qi >= a.q.length) {
-      if (a.troops > 0) nat.pool += a.troops;        // cephe bitti, kalan geri döner
+      if (a.troops > 0) deposit(sim, nat, a.troops); // cephe bitti, kalan geri döner
       sim.attacks.splice(i, 1);
     }
   }
@@ -1102,7 +1175,10 @@ function stepGrowth(sim, dt) {
       } else {
         nat.pool *= 1 + interestRate(sim, nat);
       }
-      if (income) nat.pool += nat.cells;
+      if (income) {
+        const p = incomePayout(sim, nat);
+        nat.pool += p.total;
+      }
       if (nat.pool > 0) nat.pool = Math.min(nat.pool, hardCap(sim, nat));
       if (borcluydu && nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
     }
@@ -1690,21 +1766,29 @@ $('pct').addEventListener('input', e => {
 });
 $('pct').addEventListener('change', () => sfx.ui());
 
-// Sefere sürülecek asker. %100'ün ötesi borçtur: elinde olmayanı sürersin,
-// asker eksiye düşer ve gelen gelir önce onu kapatır.
+// Kaydıraç, elindeki askerin değil GÖNDEREBİLECEĞİN TOPLAM GÜCÜN yüzdesi:
+// garnizon + borçlanabileceğin. Elindekinin yüzdesi olsaydı asker bitince
+// borçlanma kapasiten de sıfırlanırdı — oysa borç tavanı toprağa bağlı ve
+// hazine boşken saldırabilmek borcun bütün amacı.
 function commitOf(me) {
-  return clamp(me.pool * ui.pct, 0, maxCommit(sim, me));
+  return maxCommit(sim, me) * ui.pct;
 }
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
   const troops = commitOf(me);
-  const borc = Math.max(0, troops - Math.max(0, me.pool));
+  const elde = Math.max(0, me.pool);
+  const borc = Math.max(0, troops - elde);
   $('pct-label').innerHTML =
-    `<b>%${Math.round(ui.pct * 100)}</b> &nbsp;→&nbsp; <b>${fmt(troops)}</b> asker` +
+    `<b>${fmt(troops)}</b> asker` +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
-  $('pct').classList.toggle('borrowing', borc > 0);
+  // Kaydıracın hangi noktadan sonra borca girdiğini şeridin üstünde göster;
+  // eşik hazinen değiştikçe kayar.
+  const esik = clamp(elde / Math.max(1, maxCommit(sim, me)) * 100, 0, 100);
+  const p = $('pct');
+  p.style.setProperty('--borrow-at', esik + '%');
+  p.classList.toggle('borrowing', borc > 0);
 }
 
 function refreshTop() {
@@ -1744,9 +1828,9 @@ function refreshTreasury(me) {
   }
   $('cap-soft').style.left = (soft / hard * 100) + '%';
   $('cap-soft').style.display = borclu ? 'none' : '';
-  $('econ-inc').textContent = borclu
-    ? `+${fmt(me.cells)} / 5.6sn → borca`
-    : `+${fmt(me.cells)} / 5.6sn`;
+  const pay = incomePayout(sim, me);
+  $('econ-inc').textContent = `+${fmt(pay.land)}` + (borclu ? ' → borca' : '');
+  $('econ-balloon').textContent = borclu ? '—' : `+${fmt(pay.balloon)}`;
   $('econ-soft').textContent = borclu
     ? `borç ${fmt(-me.pool)} / ${fmt(maxDebt(sim, me))}`
     : fmt(soft);
@@ -1754,31 +1838,82 @@ function refreshTreasury(me) {
 }
 
 // Faiz/gelir döngüsü göstergesi: 10 hane, her faiz tikinde biri dolar,
-// onuncusu dolunca arazi geliri yatar.
-const pipEls = [];
-function refreshCycle(me, borclu) {
-  const box = $('pips');
-  if (!pipEls.length) {
+// onuncusu dolunca arazi geliri yatar. İki yerde gösteriliyor — panelde
+// ve dar ekranda çekmece kapalıyken özet şeritte.
+const pipSets = new Map();
+function paintPips(boxId) {
+  let els = pipSets.get(boxId);
+  if (!els) {
+    const box = $(boxId);
+    els = [];
     for (let i = 0; i < TICKS_PER_INCOME; i++) {
       const p = document.createElement('i');
       p.appendChild(document.createElement('b'));
       box.appendChild(p);
-      pipEls.push(p);
+      els.push(p);
     }
+    pipSets.set(boxId, els);
   }
-  const done = tickIndex(sim);
-  const prog = tickProgress(sim);
-  for (let i = 0; i < pipEls.length; i++) {
-    const p = pipEls[i];
+  const done = tickIndex(sim), prog = tickProgress(sim);
+  for (let i = 0; i < els.length; i++) {
+    const p = els[i];
     const dolu = i < done;
     p.classList.toggle('on', dolu);
     p.classList.toggle('now', i === done);
     p.firstChild.style.width = i === done ? (prog * 100) + '%' : dolu ? '100%' : '0%';
   }
+}
+
+function refreshCycle(me, borclu) {
+  paintPips('pips');
   const kalan = secsToIncome(sim);
+  const pay = incomePayout(sim, me);
   $('cycle-note').innerHTML = borclu
-    ? `<b>${fmt(me.cells)}</b> gelir <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
-    : `<b>+${fmt(me.cells)}</b> arazi geliri <b>${kalan.toFixed(1)}sn</b> sonra`;
+    ? `<b>${fmt(pay.land)}</b> ödeme <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
+    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)} + balon ${fmt(pay.balloon)})</span>` +
+      ` <b>${kalan.toFixed(1)}sn</b> sonra`;
+  refreshMini(me, borclu, kalan);
+}
+
+// Dar ekranda çekmece kapalıyken tek görünen şerit bu — bilgiyi burada
+// yoğunlaştır: asker/tavan, faiz, gelir geri sayımı ve süren sefer.
+function refreshMini(me, borclu, kalan) {
+  const hard = hardCap(sim, me), soft = softCap(sim, me);
+  const t = $('mini-troops');
+  t.textContent = borclu ? `−${fmt(-me.pool)}` : fmt(ui.shownTroops);
+  t.className = borclu ? 'debt' : '';
+
+  const r = interestRate(sim, me);
+  const mi = $('mini-int');
+  mi.textContent = borclu ? 'borç' : r > 0 ? `%${(r * 100).toFixed(1)}` : 'tavan';
+  mi.className = borclu || r <= 0 ? 'stalled' : '';
+
+  const pay = incomePayout(sim, me);
+  $('mini-inc').innerHTML =
+    `+${fmt(borclu ? pay.land : pay.total)}<span class="s"> ${kalan.toFixed(1)}sn</span>`;
+
+  const fill = $('mini-fill');
+  if (borclu) {
+    fill.style.width = clamp(-me.pool / maxDebt(sim, me) * 100, 0, 100) + '%';
+    fill.style.background = 'var(--bad)';
+  } else {
+    fill.style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
+    fill.style.background = me.color;
+  }
+  $('mini-soft').style.left = (soft / hard * 100) + '%';
+  $('mini-soft').style.display = borclu ? 'none' : '';
+
+  paintPips('mini-pips');
+
+  const mine = sim.attacks.filter(a => a.from === me.id);
+  const mf = $('mini-front');
+  mf.classList.toggle('hidden', !mine.length);
+  if (mine.length) {
+    const a = mine[0];
+    const ad = a.target < 0 ? 'boş toprak' : sim.nations[a.target].name;
+    mf.innerHTML = `⚔ ${ad} — <b>${fmt(a.troops)}</b> asker cephede` +
+      (mine.length > 1 ? ` <span class="s">+${mine.length - 1} cephe</span>` : '');
+  }
 }
 
 function mkBtn(text, cls, fn, title) {
@@ -2029,7 +2164,7 @@ window.__rb = {
   sim, ui, view, W, H, S, focusHome, fitStage, sfx,
   api: {
     startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
-    power, maxDebt, maxCommit, inDebt,
+    power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },
 };

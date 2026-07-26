@@ -7,6 +7,7 @@ import {
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
+  incomePayout, INCOME_SCALE,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -279,20 +280,25 @@ t('faiz bileşik: eşit aralıklarda artış hızlanıyor', () => {
   const s = createSim(1);
   for (const n of s.nations) n.ai = false;   // saldırı olmasın
   const nat = s.nations[0];
-  // Yumuşak tavana yaklaşınca faiz kısılır; hızlanmayı görmek için
-  // ölçümü tavanın çok altındaki bölgede yap.
-  nat.pool = softCap(s, nat) * 0.04;
+  // Yumuşak tavana yaklaşınca faiz kısılır; hızlanmayı görmek için ölçümü
+  // tavanın altında yap. Ayrıca gelir tikleri toplu ödeme yaptığından
+  // ölçüm penceresine denk gelmemeli — gelir tikinin hemen ardından başla
+  // ve yalnız faiz tiklerini ölç.
+  nat.pool = softCap(s, nat) * 0.05;
+  while (tickIndex(s) !== 0) step(s, 0.02, 0.02);
   const artislar = [];
   let prev = nat.pool;
   for (let d = 0; d < 3; d++) {
-    for (let i = 0; i < 300; i++) step(s, 0.05, 0.05);   // 15 sn
+    const hedef = s.tickNo + 1;
+    while (s.tickNo < hedef) step(s, 0.02, 0.02);
     artislar.push(nat.pool - prev);
     prev = nat.pool;
   }
   assert(nat.pool < softCap(s, nat),
     `ölçüm yumuşak tavanı aştı (${Math.round(nat.pool)} / ${Math.round(softCap(s, nat))})`);
-  assert(artislar[1] > artislar[0] * 1.15 && artislar[2] > artislar[1] * 1.15,
-    `artışlar hızlanmıyor: ${artislar.map(a => Math.round(a)).join(' → ')}`);
+  // bileşik faizin tanımı: eşit aralıklarda artış büyür
+  assert(artislar[1] > artislar[0] && artislar[2] > artislar[1],
+    `artışlar hızlanmıyor: ${artislar.map(a => a.toFixed(1)).join(' → ')}`);
 });
 
 t('faiz oranı toprak payıyla yükseliyor', () => {
@@ -343,6 +349,41 @@ t('tavanlar toprakla büyüyor', () => {
   assert(hardCap(s, nat) > softCap(s, nat), 'sert tavan yumuşaktan küçük');
 });
 
+t('arsa ödemesi toprakla ÜSTEL artıyor', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  nat.pool = 0;                              // balonu devre dışı bırak
+  nat.cells = 100;
+  const az = incomePayout(s, nat).land;
+  nat.cells = 200;
+  const cok = incomePayout(s, nat).land;
+  // toprak iki katına çıkınca ödeme ikiden FAZLA katına çıkmalı
+  assert(cok > az * 2.1, `${az.toFixed(0)} → ${cok.toFixed(0)} (yalnız ${(cok/az).toFixed(2)} kat)`);
+});
+
+t('gelir tikinde faizin balon ödemesi de yatıyor', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  nat.cells = 300;
+  nat.pool = 0;
+  assert.equal(incomePayout(s, nat).balloon, 0, 'asker yokken balon var');
+  nat.pool = softCap(s, nat) * 0.5;
+  const p = incomePayout(s, nat);
+  assert(p.balloon > 0, 'balon ödemesi yok');
+  // balon, tek tik faizinden belirgin biçimde büyük olmalı
+  const tekTik = nat.pool * interestRate(s, nat);
+  assert(p.balloon > tekTik * 3, `balon ${p.balloon.toFixed(0)}, tek tik ${tekTik.toFixed(0)}`);
+  assert(Math.abs(p.total - (p.land + p.balloon)) < 1e-6);
+});
+
+t('borçtayken balon ödemesi işlemez', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  nat.cells = 300; nat.pool = -500;
+  assert.equal(incomePayout(s, nat).balloon, 0, 'borçluyken balon ödeniyor');
+  assert(incomePayout(s, nat).land > 0, 'borçluyken arsa ödemesi de kesilmiş');
+});
+
 t('arazi geliri toprakla orantılı', () => {
   const mk = (cells) => {
     const s = createSim(1);
@@ -369,10 +410,12 @@ t('ödemeler kesikli: gelir tam onuncu tikte yatıyor', () => {
     yatan.push(Math.round(nat.pool - prev));
     prev = nat.pool;
   }
-  // ilk dokuz tikte hiçbir şey yatmamalı, onuncuda toprak kadar
+  // ilk dokuz tikte hiçbir şey yatmamalı, onuncuda toplu ödeme
   assert.deepEqual(yatan.slice(0, 9), new Array(9).fill(0),
     `erken ödeme var: ${yatan.join(',')}`);
-  assert.equal(yatan[9], 200, `onuncu tikte ${yatan[9]} yattı, 200 beklendi`);
+  const beklenen = Math.round(Math.pow(200, 1.18) * INCOME_SCALE);
+  assert(Math.abs(yatan[9] - beklenen) <= 2,
+    `onuncu tikte ${yatan[9]} yattı, ~${beklenen} beklendi`);
 });
 
 t('gösterge döngüyle tutarlı ilerliyor', () => {
@@ -401,6 +444,36 @@ t('gelir yatınca arayüz için olay üretiliyor', () => {
   }
   assert.equal(tikOlayi, TICKS_PER_INCOME, `${tikOlayi} tik olayı`);
   assert.equal(gelirOlayi, 1, `${gelirOlayi} gelir olayı`);
+});
+
+// Ekonomi hızlanınca havuz sürekli tavanda duruyor; bu iki yol daha önce
+// kırpılmadığı için tavan aşılıyordu.
+t('geri dönen sefer askeri tavanı aşırmaz', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  const a = startAttack(s, nat, -1, nat.pool * 0.6);
+  nat.pool = hardCap(s, nat);            // bu arada havuz tavana dolsun
+  cancelAttack(s, a);
+  assert(nat.pool <= hardCap(s, nat) + 1e-6,
+    `${nat.pool.toFixed(0)} > ${hardCap(s, nat).toFixed(0)}`);
+});
+
+t('toprak kaybeden ulusun askeri yeni tavana kırpılır', () => {
+  const s = fresh();
+  const A = s.nations[0];
+  let hedef = -1;
+  for (let i = 1; i < s.nations.length; i++) if (findBorder(s, 0, i) >= 0) { hedef = i; break; }
+  if (hedef < 0) return;
+  const B = s.nations[hedef];
+  B.pool = hardCap(s, B);                // savunan tam dolu
+  A.pool = hardCap(s, A);
+  startAttack(s, A, hedef, A.pool);
+  for (let i = 0; i < 200; i++) {
+    step(s, 1 / 30, 1 / 30);
+    if (!B.alive) return;
+    assert(B.pool <= hardCap(s, B) + 1e-6,
+      `toprak ${B.cells}, tavan ${hardCap(s, B).toFixed(0)}, asker ${B.pool.toFixed(0)}`);
+  }
 });
 
 t('asker sert tavanı aşamaz', () => {

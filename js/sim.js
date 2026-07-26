@@ -22,8 +22,14 @@ export const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
 export const TICK = 0.56;             // faiz periyodu (sn)
 export const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
-const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
-const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
+// Genel hız çarpanı.
+export const INCOME_SCALE = 3;
+// Arazi geliri toprakla ÜSTEL artar: büyümek kendi kendini besler.
+const INCOME_EXP = 1.18;
+// Gelir tikinde faiz de toplu (balon) ödeme yapar — tik faizinin bu katı.
+const BALLOON = 6;
+const INTEREST_MIN = 0.016 * INCOME_SCALE;   // çok az toprakta tik başına faiz
+const INTEREST_MAX = 0.040 * INCOME_SCALE;   // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
 // asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
 // bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
@@ -37,7 +43,7 @@ const START_MULT = 9;                 // başlangıç askeri = toprak × bu
 // Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
 // önce borcu kapatır, borç da kendi faiziyle büyür — bedava kredi değil.
 const DEBT_MULT = 10;                 // en fazla borç = toprak × bu
-const DEBT_RATE = 0.004;              // borcun tik başına büyümesi
+const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — borçlanmak riskli
 
 // --- saldırı dengesi ---
 // Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
@@ -146,12 +152,26 @@ export function interestRate(sim, nat) {
 }
 
 // Borçtayken savunma yoğunluğu negatife düşmesin — bedel tabanın altına inmez.
+// Gelir tikinde yatacak toplu ödeme: arazi geliri (toprakla üstel) artı
+// faizin balon ödemesi. Arayüz bunu okuyup geri sayımın yanında gösterir.
+export function incomePayout(sim, nat) {
+  const land = Math.pow(Math.max(0, nat.cells), INCOME_EXP) * INCOME_SCALE;
+  const balloon = Math.max(0, nat.pool) * interestRate(sim, nat) * BALLOON;
+  return { land, balloon, total: land + balloon };
+}
+
 export function density(nat) { return Math.max(0, nat.pool) / Math.max(25, nat.cells); }
 
 export function maxDebt(sim, nat) { return nat.cells * DEBT_MULT; }
 export const inDebt = nat => nat.pool < 0;
 // Bir seferde sürebileceğin en yüksek asker: elindeki + borçlanabileceğin.
 export function maxCommit(sim, nat) { return nat.pool + maxDebt(sim, nat); }
+// Havuza yapılan HER ekleme buradan geçmeli. Ekonomi hızlanınca havuz sürekli
+// tavanda duruyor; geri dönen sefer askeri kırpılmazsa tavan aşılıyor.
+export function deposit(sim, nat, amount) {
+  nat.pool = Math.min(nat.pool + amount, hardCap(sim, nat));
+}
+
 export function power(sim, nat) {
   let onFront = 0;
   for (const a of sim.attacks) if (a.from === nat.id) onFront += a.troops;
@@ -185,7 +205,7 @@ export function breakAlliance(sim, breaker, other) {
   // bozanın o tarafa süren saldırıları da durur
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
     const at = sim.attacks[i];
-    if (at.from === breaker.id) { breaker.pool += at.troops; sim.attacks.splice(i, 1); }
+    if (at.from === breaker.id) { deposit(sim, breaker, at.troops); sim.attacks.splice(i, 1); }
   }
   log(sim, `💔 ${breaker.name} ittifakı bozdu — ${BETRAY_LOCK}sn saldıramaz`, 'betray');
   sim.fx.push({ tip: 'betray', nat: breaker.id });
@@ -245,7 +265,7 @@ export function startAttack(sim, nat, targetId, troops) {
 export function cancelAttack(sim, atk) {
   const i = sim.attacks.indexOf(atk);
   if (i < 0) return;
-  sim.nations[atk.from].pool += atk.troops;   // geri çağrılan asker garnizona döner
+  deposit(sim, sim.nations[atk.from], atk.troops);   // geri çağrılan asker garnizona döner
   sim.attacks.splice(i, 1);
 }
 
@@ -255,6 +275,9 @@ function take(sim, cell, nat) {
   if (o >= 0) {
     const def = sim.nations[o];
     def.cells--;
+    // Tavan toprağa bağlı: küçülen ulusun askeri de yeni tavana kırpılmalı,
+    // yoksa toprak kaybeden bir ulus tavanının üstünde asker taşır.
+    if (def.pool > 0) def.pool = Math.min(def.pool, hardCap(sim, def));
     if (def.cells <= 0) kill(sim, def);
   }
   sim.owner[cell] = nat.id;
@@ -313,7 +336,7 @@ function stepAttacks(sim, dt) {
     if (took) a.lastX = (a.q[a.qi - 1] % W), a.lastY = ((a.q[a.qi - 1] / W) | 0);
 
     if (a.troops <= 0 || a.qi >= a.q.length) {
-      if (a.troops > 0) nat.pool += a.troops;        // cephe bitti, kalan geri döner
+      if (a.troops > 0) deposit(sim, nat, a.troops); // cephe bitti, kalan geri döner
       sim.attacks.splice(i, 1);
     }
   }
@@ -339,7 +362,10 @@ function stepGrowth(sim, dt) {
       } else {
         nat.pool *= 1 + interestRate(sim, nat);
       }
-      if (income) nat.pool += nat.cells;
+      if (income) {
+        const p = incomePayout(sim, nat);
+        nat.pool += p.total;
+      }
       if (nat.pool > 0) nat.pool = Math.min(nat.pool, hardCap(sim, nat));
       if (borcluydu && nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
     }

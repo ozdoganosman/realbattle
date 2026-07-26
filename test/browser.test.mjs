@@ -165,7 +165,7 @@ check('duraklat gerçekten durduruyor', await page.evaluate(async () => {
   await new Promise(r => setTimeout(r, 600));
   return window.__rb.sim.t === t0;
 }));
-await page.click('#btn-play');
+await page.evaluate(() => { window.__rb.ui.speed = 1; });
 await page.screenshot({ path: path.join(OUT, '04-oyun.png') });
 
 // ---------------------------------------------------------------- ittifak
@@ -226,9 +226,10 @@ check('geri sayım azalıyor', await page.evaluate(async () => {
 }));
 
 check('gelir tam onuncu tikte yatıyor', await page.evaluate(async () => {
-  const { sim } = window.__rb;
+  const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
   sim.attacks.length = 0;
+  me.pool = 0;                          // tavandayken gelir kırpılır, sıfırdan başlat
   const hedef = sim.tickNo + (10 - sim.tickNo % 10);
   let oncekiTik = sim.tickNo, artis = null, sonPool = me.pool;
   const t0 = Date.now();
@@ -239,33 +240,54 @@ check('gelir tam onuncu tikte yatıyor', await page.evaluate(async () => {
       oncekiTik = sim.tickNo; sonPool = me.pool;
     }
   }
-  // son tik gelir tikiydi: artış en az toprak kadar olmalı
-  return artis !== null && artis >= me.cells * 0.9;
+  // gelir tiki toprakla orantılı bir ödeme yapmalı (tavana takılmadıysa)
+  return artis !== null && (artis >= me.cells * 0.9 || me.pool >= api.hardCap(sim, me) - 1);
 }));
 await page.screenshot({ path: path.join(OUT, '04b-dongu.png') });
 
 // ---------------------------------------------------------------- borç
 console.log('\nBorçlanma');
-check('kaydıraç %100ün ötesine gidebiliyor',
-  +(await page.$eval('#pct', el => el.max)) > 100);
-
-check('%100 üstünde borç miktarı yazıyor', await page.evaluate(async () => {
+// Hazine boşken de saldırabilmeli — eksik kısım borçlanılır.
+// Hızlı ekonomi hazineyi anında doldurduğu için ölçüm sırasında duraklat.
+await page.evaluate(() => { window.__rb.ui.speed = 0; });
+check('hazine boşken bile sefere asker çıkarılabiliyor', await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.pool = 0;
   const p = document.getElementById('pct');
-  p.value = '140';
-  p.dispatchEvent(new Event('input'));
+  p.value = '50'; p.dispatchEvent(new Event('input'));
   await new Promise(r => setTimeout(r, 60));
+  const yazi = document.getElementById('pct-label').textContent;
+  return /[1-9]/.test(yazi) && api.maxCommit(sim, me) > 0;
+}));
+
+check('hazine boşken kaydıraç borç uyarısı veriyor', await page.evaluate(async () => {
+  const p = document.getElementById('pct');
   return document.querySelector('.pct-label .debt') !== null
     && p.classList.contains('borrowing');
 }));
 
-check('%100 altında borç uyarısı yok', await page.evaluate(async () => {
+check('hazine doluyken düşük oranda borç uyarısı yok', await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.pool = api.hardCap(sim, me);
   const p = document.getElementById('pct');
-  p.value = '50';
-  p.dispatchEvent(new Event('input'));
+  p.value = '50'; p.dispatchEvent(new Event('input'));
   await new Promise(r => setTimeout(r, 60));
   return document.querySelector('.pct-label .debt') === null;
 }));
 
+check('borç eşiği kaydıraç üstünde işaretleniyor', await page.evaluate(() => {
+  const v = document.getElementById('pct').style.getPropertyValue('--borrow-at');
+  return /%$/.test(v) && parseFloat(v) > 0;
+}));
+await page.evaluate(() => { window.__rb.ui.speed = 1; });
+
+// Hızlı ekonomide gelir borcu bir iki tikte kapatıyor; borç arayüzünü
+// ölçerken oyunu duraklatıp durumu sabit tutmak gerekiyor. Düğmeye tıklamak
+// yerine hızı doğrudan ayarlıyoruz: oyun bitmişse bitiş ekranı tıklamayı
+// engelliyor ve test takılıyor.
+await page.evaluate(() => { window.__rb.ui.speed = 0; });
 const debt = await page.evaluate(() => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];

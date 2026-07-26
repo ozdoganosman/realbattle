@@ -132,6 +132,7 @@ body {
   overflow: hidden;
 }
 #drawer { display: none; }
+#mini { display: none; }              /* yalnız dar ekranda, çekmece kapalıyken */
 .sec { padding: 11px 13px; border-bottom: 1px solid #cdb894; }
 .sec.grow { flex: 1; overflow-y: auto; }
 .sec-h {
@@ -194,9 +195,13 @@ body {
   width: 100%; height: 30px;
   -webkit-appearance: none; appearance: none; background: none;
 }
+/* Şeridin --borrow-at noktasına kadarı elindeki asker, ötesi borç bölgesi.
+   Eşik hazine değiştikçe kayar. */
 #pct::-webkit-slider-runnable-track {
   height: 8px; border-radius: 4px;
-  background: linear-gradient(90deg, #b39a68, #8a6f3d);
+  background: linear-gradient(90deg,
+    #8a6f3d 0%, #a3814a var(--borrow-at, 100%),
+    #c2603f var(--borrow-at, 100%), #d4573d 100%);
 }
 #pct::-moz-range-track { height: 8px; border-radius: 4px; background: #b39a68; }
 #pct::-webkit-slider-thumb {
@@ -214,10 +219,6 @@ body {
 }
 .pct-label { font-size: 15px; text-align: center; font-variant-numeric: tabular-nums; }
 .pct-label .debt { color: var(--bad); font-weight: bold; }
-/* %100'ü aşınca kaydıracın kendisi de uyarsın */
-#pct.borrowing::-webkit-slider-runnable-track {
-  background: linear-gradient(90deg, #8a6f3d 0%, #8a6f3d 62%, var(--bad) 62%, #d4573d 100%);
-}
 #pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
 #tb-troops.debt { color: #ff8f7a; }
 
@@ -356,10 +357,10 @@ button.mini.bad:hover { background: #cc543b; }
   .spd { padding: 6px 8px; margin-left: 3px; font-size: 11px; }
 
   #main { flex-direction: column; }
-  #map-wrap { padding: 4px; padding-bottom: 104px; }
+  #map-wrap { padding: 4px; padding-bottom: 158px; }
 
   #log { font-size: 11.5px; max-width: 60%; left: 8px; top: 6px; }
-  #hint-bar { font-size: 11.5px; bottom: 112px; max-width: 92%; text-align: center; }
+  #hint-bar { font-size: 11.5px; bottom: 166px; max-width: 92%; text-align: center; }
   #target-chip { font-size: 12px; }
   #zoom-ctl { right: 7px; top: 7px; }
   #zoom-ctl button { width: 42px; height: 42px; font-size: 20px; }
@@ -373,7 +374,43 @@ button.mini.bad:hover { background: #cc543b; }
     box-shadow: 0 -6px 26px rgba(0,0,0,.5);
     z-index: 5;
   }
+  #panel { max-height: 158px; }        /* özet şerit + kaydıraç sığsın */
   #panel.open { max-height: 74vh; overflow-y: auto; }
+
+  /* --- kapalı çekmecenin özet şeridi --- */
+  #panel:not(.open) #mini { display: block; padding: 0 13px 5px; }
+  .mini-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 12px; margin-bottom: 5px;
+  }
+  .mini-cell { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+  .mini-cell .k {
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .mini-cell b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mini-cell b.debt { color: var(--bad); }
+  .mini-cell b.stalled { color: var(--bad); font-weight: normal; }
+  .mini-cell .s { color: var(--dim); font-weight: normal; }
+  .mini-bar {
+    position: relative; height: 7px; border-radius: 4px;
+    background: #d6c39c; overflow: hidden; margin-bottom: 4px;
+    box-shadow: inset 0 1px 2px rgba(90,70,35,.3);
+  }
+  .mini-bar i { display: block; height: 100%; border-radius: 4px; transition: width .25s var(--ease); }
+  .pips.small i { height: 5px; }
+  .mini-front {
+    font-size: 11.5px; color: var(--dim); text-align: center; margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-front b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .mini-front .s { opacity: .7; }
+
+  /* kapalıyken saldırı gücü bölümü sıkışsın ama etiketi kesilmesin */
+  #panel:not(.open) .sec { padding: 4px 13px 6px; border-bottom: none; }
+  #panel:not(.open) .sec-h { display: none; }
+  #panel:not(.open) #pct { height: 28px; }
+  #panel:not(.open) .pct-label { font-size: 13px; }
 
   #drawer {
     display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -407,7 +444,7 @@ button.mini.bad:hover { background: #cc543b; }
 }
 
 @media (max-width: 860px) and (orientation: landscape) {
-  #map-wrap { padding-bottom: 96px; }
+  #map-wrap { padding-bottom: 150px; }
   #panel.open { max-height: 84vh; }
   #nation-list { grid-template-columns: repeat(4, 1fr); }
 }

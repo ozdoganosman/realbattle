@@ -17,9 +17,9 @@ göndereceğini belirler.
 | Mekanik | Nasıl işler |
 |---|---|
 | **Sınır dalgası** | Saldırı, hedefin sana değen bütün sınırından başlar ve içeri doğru yayılır. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **Bileşik büyüme** | Ödemeler kesikli: her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre %1.0–%2.6, açılışta 1.9 kat hızlı), her **10. tikte** (5.6 sn) **toprağın kadar** düz gelir. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
+| **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre yükselir, açılışta 1.9 kat hızlı). Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla *üstel* artar, yani büyümek kendini besler — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın **40 katı**, sert tavan **60 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
-| **Borçlanma** | Saldırı gücünü **%100'ün ötesine** çekip elinde olmayanı sefere sürebilirsin; askerin eksiye düşer. Gelen gelirin tamamı borca gider, borç da kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
+| **Borçlanma** | Kaydıraç, gönderebileceğin **toplam gücün** yüzdesidir: garnizon + borçlanabileceğin. Hazinen boşken bile saldırabilirsin — eksik kısmı borçlanırsın ve askerin eksiye düşer. Kaydıracın kırmızı bölgesi borç bölgesidir ve sınırı hazinenle birlikte kayar. Gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür, kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
 | **Savunan da erir** | Kaybedilen her hücre savunanın askerinden de götürür. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
@@ -33,6 +33,8 @@ haritası gibi dursun diye varlar.
 
 ## Hissiyat
 
+- Dar ekranda çekmece kapalıyken bile asker, faiz, gelir geri sayımı, hazine
+  çubuğu ve süren sefer görünür kalır
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır
@@ -62,8 +64,8 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (50)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (41)
+npm test               # başsız simülasyon (55)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (43)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

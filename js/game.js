@@ -7,6 +7,7 @@ import {
   troopCap, power, landFrac, allied, locked, density,
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
+  INCOME_SCALE, incomePayout,
   startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, log,
 } from './sim.js';
@@ -294,21 +295,29 @@ $('pct').addEventListener('input', e => {
 });
 $('pct').addEventListener('change', () => sfx.ui());
 
-// Sefere sürülecek asker. %100'ün ötesi borçtur: elinde olmayanı sürersin,
-// asker eksiye düşer ve gelen gelir önce onu kapatır.
+// Kaydıraç, elindeki askerin değil GÖNDEREBİLECEĞİN TOPLAM GÜCÜN yüzdesi:
+// garnizon + borçlanabileceğin. Elindekinin yüzdesi olsaydı asker bitince
+// borçlanma kapasiten de sıfırlanırdı — oysa borç tavanı toprağa bağlı ve
+// hazine boşken saldırabilmek borcun bütün amacı.
 function commitOf(me) {
-  return clamp(me.pool * ui.pct, 0, maxCommit(sim, me));
+  return maxCommit(sim, me) * ui.pct;
 }
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
   const troops = commitOf(me);
-  const borc = Math.max(0, troops - Math.max(0, me.pool));
+  const elde = Math.max(0, me.pool);
+  const borc = Math.max(0, troops - elde);
   $('pct-label').innerHTML =
-    `<b>%${Math.round(ui.pct * 100)}</b> &nbsp;→&nbsp; <b>${fmt(troops)}</b> asker` +
+    `<b>${fmt(troops)}</b> asker` +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
-  $('pct').classList.toggle('borrowing', borc > 0);
+  // Kaydıracın hangi noktadan sonra borca girdiğini şeridin üstünde göster;
+  // eşik hazinen değiştikçe kayar.
+  const esik = clamp(elde / Math.max(1, maxCommit(sim, me)) * 100, 0, 100);
+  const p = $('pct');
+  p.style.setProperty('--borrow-at', esik + '%');
+  p.classList.toggle('borrowing', borc > 0);
 }
 
 function refreshTop() {
@@ -348,9 +357,9 @@ function refreshTreasury(me) {
   }
   $('cap-soft').style.left = (soft / hard * 100) + '%';
   $('cap-soft').style.display = borclu ? 'none' : '';
-  $('econ-inc').textContent = borclu
-    ? `+${fmt(me.cells)} / 5.6sn → borca`
-    : `+${fmt(me.cells)} / 5.6sn`;
+  const pay = incomePayout(sim, me);
+  $('econ-inc').textContent = `+${fmt(pay.land)}` + (borclu ? ' → borca' : '');
+  $('econ-balloon').textContent = borclu ? '—' : `+${fmt(pay.balloon)}`;
   $('econ-soft').textContent = borclu
     ? `borç ${fmt(-me.pool)} / ${fmt(maxDebt(sim, me))}`
     : fmt(soft);
@@ -358,31 +367,82 @@ function refreshTreasury(me) {
 }
 
 // Faiz/gelir döngüsü göstergesi: 10 hane, her faiz tikinde biri dolar,
-// onuncusu dolunca arazi geliri yatar.
-const pipEls = [];
-function refreshCycle(me, borclu) {
-  const box = $('pips');
-  if (!pipEls.length) {
+// onuncusu dolunca arazi geliri yatar. İki yerde gösteriliyor — panelde
+// ve dar ekranda çekmece kapalıyken özet şeritte.
+const pipSets = new Map();
+function paintPips(boxId) {
+  let els = pipSets.get(boxId);
+  if (!els) {
+    const box = $(boxId);
+    els = [];
     for (let i = 0; i < TICKS_PER_INCOME; i++) {
       const p = document.createElement('i');
       p.appendChild(document.createElement('b'));
       box.appendChild(p);
-      pipEls.push(p);
+      els.push(p);
     }
+    pipSets.set(boxId, els);
   }
-  const done = tickIndex(sim);
-  const prog = tickProgress(sim);
-  for (let i = 0; i < pipEls.length; i++) {
-    const p = pipEls[i];
+  const done = tickIndex(sim), prog = tickProgress(sim);
+  for (let i = 0; i < els.length; i++) {
+    const p = els[i];
     const dolu = i < done;
     p.classList.toggle('on', dolu);
     p.classList.toggle('now', i === done);
     p.firstChild.style.width = i === done ? (prog * 100) + '%' : dolu ? '100%' : '0%';
   }
+}
+
+function refreshCycle(me, borclu) {
+  paintPips('pips');
   const kalan = secsToIncome(sim);
+  const pay = incomePayout(sim, me);
   $('cycle-note').innerHTML = borclu
-    ? `<b>${fmt(me.cells)}</b> gelir <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
-    : `<b>+${fmt(me.cells)}</b> arazi geliri <b>${kalan.toFixed(1)}sn</b> sonra`;
+    ? `<b>${fmt(pay.land)}</b> ödeme <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
+    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)} + balon ${fmt(pay.balloon)})</span>` +
+      ` <b>${kalan.toFixed(1)}sn</b> sonra`;
+  refreshMini(me, borclu, kalan);
+}
+
+// Dar ekranda çekmece kapalıyken tek görünen şerit bu — bilgiyi burada
+// yoğunlaştır: asker/tavan, faiz, gelir geri sayımı ve süren sefer.
+function refreshMini(me, borclu, kalan) {
+  const hard = hardCap(sim, me), soft = softCap(sim, me);
+  const t = $('mini-troops');
+  t.textContent = borclu ? `−${fmt(-me.pool)}` : fmt(ui.shownTroops);
+  t.className = borclu ? 'debt' : '';
+
+  const r = interestRate(sim, me);
+  const mi = $('mini-int');
+  mi.textContent = borclu ? 'borç' : r > 0 ? `%${(r * 100).toFixed(1)}` : 'tavan';
+  mi.className = borclu || r <= 0 ? 'stalled' : '';
+
+  const pay = incomePayout(sim, me);
+  $('mini-inc').innerHTML =
+    `+${fmt(borclu ? pay.land : pay.total)}<span class="s"> ${kalan.toFixed(1)}sn</span>`;
+
+  const fill = $('mini-fill');
+  if (borclu) {
+    fill.style.width = clamp(-me.pool / maxDebt(sim, me) * 100, 0, 100) + '%';
+    fill.style.background = 'var(--bad)';
+  } else {
+    fill.style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
+    fill.style.background = me.color;
+  }
+  $('mini-soft').style.left = (soft / hard * 100) + '%';
+  $('mini-soft').style.display = borclu ? 'none' : '';
+
+  paintPips('mini-pips');
+
+  const mine = sim.attacks.filter(a => a.from === me.id);
+  const mf = $('mini-front');
+  mf.classList.toggle('hidden', !mine.length);
+  if (mine.length) {
+    const a = mine[0];
+    const ad = a.target < 0 ? 'boş toprak' : sim.nations[a.target].name;
+    mf.innerHTML = `⚔ ${ad} — <b>${fmt(a.troops)}</b> asker cephede` +
+      (mine.length > 1 ? ` <span class="s">+${mine.length - 1} cephe</span>` : '');
+  }
 }
 
 function mkBtn(text, cls, fn, title) {
@@ -633,7 +693,7 @@ window.__rb = {
   sim, ui, view, W, H, S, focusHome, fitStage, sfx,
   api: {
     startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
-    power, maxDebt, maxCommit, inDebt,
+    power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },
 };
