@@ -447,8 +447,12 @@ t('faiz oranı toprak payıyla yükseliyor', () => {
   s.t = 200;                                  // açılış çarpanı bitsin
   kucuk.cells = 100; kucuk.pool = 10;
   buyuk.cells = Math.round(s.landCells * 0.8); buyuk.pool = 10;
-  assert(interestRate(s, buyuk) > interestRate(s, kucuk) * 1.5,
-    `${(interestRate(s, kucuk) * 100).toFixed(2)}% vs ${(interestRate(s, buyuk) * 100).toFixed(2)}%`);
+  // Aralık GENİŞ olmalı: küçükken faiz sürünür, haritaya hükmederken uçar.
+  // Dar bir aralık ekonomiyi tekdüze yapıyordu.
+  const oran = interestRate(s, buyuk) / interestRate(s, kucuk);
+  assert(oran > 6,
+    `aralık dar (${oran.toFixed(1)} kat): %${(interestRate(s, kucuk) * 100).toFixed(2)} `
+    + `→ %${(interestRate(s, buyuk) * 100).toFixed(2)}`);
 });
 
 t('açılışta faiz daha yüksek, sonra iniyor', () => {
