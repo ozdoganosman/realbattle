@@ -219,6 +219,8 @@ body {
 }
 .pct-label { font-size: 15px; text-align: center; font-variant-numeric: tabular-nums; }
 .pct-label .debt { color: var(--bad); font-weight: bold; }
+/* kaydıraç az söylediğinde hamle bir halkaya yuvarlanır — sayı bunu gösterir */
+.pct-label .floor { color: var(--dim); font-size: 12px; }
 #pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
 #tb-troops.debt { color: #ff8f7a; }
 

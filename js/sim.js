@@ -268,6 +268,25 @@ export function frontCost(sim, nat, targetId) {
   return frontOf(sim, nat, targetId).length * attackCost(sim, targetId);
 }
 
+// Bütün komşu cephelerin en küçük hamle bedeli, TEK taramada. Arayüz bunu her
+// karede sorabilsin diye var: hedef başına ayrı frontCost çağırmak haritayı
+// komşu sayısı kadar tarardı.
+export function frontCosts(sim, nat) {
+  const say = new Map();
+  const tmp = [];
+  for (let c = 0; c < W * H; c++) {
+    const o = sim.owner[c];
+    if (o === nat.id) continue;
+    if (o < 0 && !sim.world.isLand[c]) continue;
+    for (const n of nbs(c, tmp)) {
+      if (sim.owner[n] === nat.id) { say.set(o, (say.get(o) || 0) + 1); break; }
+    }
+  }
+  const out = new Map();
+  for (const [id, adet] of say) out.set(id, adet * attackCost(sim, id));
+  return out;
+}
+
 // Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
 // oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
 export function startAttack(sim, nat, targetId, troops) {

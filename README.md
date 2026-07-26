@@ -17,7 +17,7 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 | Mekanik | Nasıl işler |
 |---|---|
 | **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler — sıradaki halkanın tamamı aynı anda düşer, yani sınır her yerde aynı derinlikte kalır, dişli ya da noktalı bir cephe oluşmaz. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **En küçük hamle** | Bir halka ya tamamen alınır ya hiç. Bu yüzden en küçük hamle "bütün sınırı bir hücre içeri it"tir; kaydıraç daha azını söylerse hamle sessizce bu en küçük değere yuvarlanır (borçlandırmaz). Cephe uzadıkça en küçük hamle de pahalanır — geniş sınır itmek pahalı, dar sınır itmek ucuzdur. |
+| **En küçük hamle** | Bir halka ya tamamen alınır ya hiç. Bu yüzden en küçük hamle "bütün sınırı bir hücre içeri it"tir; kaydıraç daha azını söylerse hamle bu en küçük değere yuvarlanır (borçlandırmaz) — kaydıracın altındaki sayı zaten yuvarlanmış hâli gösterir, yanına *en küçük hamle* yazar. Bir hedefin üstüne gelince baloncuk o cepheye tam olarak kaç asker gideceğini söyler. Cephe uzadıkça en küçük hamle de pahalanır — geniş sınır itmek pahalı, dar sınır itmek ucuzdur. |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** — oran toprak payıyla yükselir ve aralık geniştir: bir avuç toprakla tik başına ~**%2.4**, kıtaya hükmederken ~**%28** (açılışta ayrıca 1.9 kat hızlı). Küçükken ekonomi sürünür, büyüdükçe uçar. Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs neredeyse 1 (toprak iki katına çıkınca ödeme ~2.04 kat), yani büyümek kendini az besler ve lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
@@ -68,7 +68,7 @@ ortamlar için yalnız gövde içeriğini taşır.
 
 ```bash
 npm test               # başsız simülasyon (62)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (43)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (45)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

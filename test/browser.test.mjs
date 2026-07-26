@@ -375,6 +375,35 @@ check('haritada asker sayısı okunaklı basılıyor', await page.evaluate(() =>
   return false;
 }));
 
+// Kaydıracın altındaki sayı ile fiilen giden asker AYNI olmalı. Hamle bir
+// halkaya yuvarlandığı için "15 asker" yazıp 100 göndermek kullanıcıyı
+// şaşırtıyordu.
+check('yazan asker ile giden asker aynı', await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  const hiz = window.__rb.ui.speed;
+  window.__rb.ui.speed = 0;
+  const me = sim.nations[sim.playerId];
+  sim.attacks.length = 0;
+  me.lockUntil = 0;
+  me.pool = api.hardCap(sim, me);
+  const p = document.getElementById('pct');
+  p.value = '5'; p.dispatchEvent(new Event('input'));      // bilerek çok küçük
+  // cephe bedelleri 250ms önbellekli — tazelensin diye bekleyip tekrar tetikle
+  await new Promise(r => setTimeout(r, 320));
+  p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 60));
+  const yazan = +document.getElementById('pct-label').textContent
+    .replace(/[^0-9]/g, '');
+  // en ucuz cepheye saldır — etiketin dayandığı cephe bu
+  const bedeller = api.frontCosts(sim, me);
+  let hedef = null, enUcuz = Infinity;
+  for (const [id, b] of bedeller) if (b < enUcuz) { enUcuz = b; hedef = id; }
+  const atk = api.startAttack(sim, me, hedef, window.__rb.commitOf(me));
+  window.__rb.ui.speed = hiz;
+  if (!atk) return false;
+  return Math.abs(atk.start - yazan) <= Math.max(2, yazan * 0.02);
+}));
+
 check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));
 check('ses düğmesi sesi kapatıp açıyor', await page.evaluate(async () => {
   const b = document.getElementById('btn-sound');

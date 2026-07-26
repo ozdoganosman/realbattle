@@ -8,7 +8,7 @@ import {
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   INCOME_SCALE, incomePayout,
-  startAttack, cancelAttack, canAttack, attackCost, frontCost,
+  startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts,
   formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
@@ -219,14 +219,15 @@ function showChip(sx, sy, o) {
   const me = sim.nations[sim.playerId];
   if (o === undefined || o === me.id) { hideChip(); return; }
   const cost = attackCost(sim, o);
-  const troops = me.pool * ui.pct;
+  const troops = gidecek(me, o);
   const cells = Math.floor(troops / cost);
   const ad = o < 0 ? 'Boş toprak' : sim.nations[o].name;
   let uyari = '';
   if (o >= 0 && allied(me, sim.nations[o])) uyari = '<i>müttefikin</i>';
   else if (locked(sim, me)) uyari = '<i>ihanet cezan sürüyor</i>';
   chip.innerHTML = `<b>${ad}</b>` +
-    (uyari ? ` — ${uyari}` : ` · ${fmt(cells)} birim toprak alabilirsin`);
+    (uyari ? ` — ${uyari}`
+           : ` · <b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
   const r = wrap.getBoundingClientRect();
   chip.style.left = clamp(sx - r.left, 70, r.width - 70) + 'px';
@@ -265,6 +266,7 @@ function tapAttack(sx, sy) {
   }
   // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
   const istenen = commitOf(me);
+  cepheAn = -9e9;                            // hedef değişecek, bedelleri tazele
   const atk = startAttack(sim, me, target, istenen);
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
@@ -287,6 +289,7 @@ function tapAttack(sx, sy) {
   // hamleye yuvarlanmış olabilir — ne gittiğini söyle.
   if (atk.start > istenen * 1.05)
     flash(`En küçük hamle bu cephede ${fmt(atk.start)} asker`);
+  cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
   sfx.attack();
   ui.shake = Math.max(ui.shake, 5);
@@ -329,14 +332,47 @@ function commitOf(me) {
   return clamp(elde + maxDebt(sim, me) * borcPayi, 0, maxCommit(sim, me));
 }
 
+// Cephe bedelleri haritayı taramayı gerektiriyor; her karede değil, saniyede
+// dört kez tazelenir. Arayüz bunu "gerçekte kaç asker gidecek"i söylemek için
+// kullanıyor: kaydıraç az söylese de hamle bir halkaya yuvarlanır.
+// Ölçüt GERÇEK zaman: oyun duraklatıldığında sim.t donuyor ve önbellek hiç
+// tazelenmiyordu — etiket, haritanın eski hâlini gösterip gerçekte gidenden
+// sapıyordu.
+let cepheler = new Map(), cepheAn = -9e9;
+function frontMap() {
+  if (sim.playerId < 0) return cepheler;
+  const simdi = performance.now();
+  if (simdi - cepheAn > 250) {
+    cepheler = frontCosts(sim, sim.nations[sim.playerId]);
+    cepheAn = simdi;
+  }
+  return cepheler;
+}
+
+// Bir hedefe dokunulunca fiilen sürülecek asker — sim'deki yuvarlama kuralının
+// aynısı. Arayüzün söylediği sayı ile giden sayı ayrışmasın diye tek yerde.
+function gidecek(me, target) {
+  const istenen = commitOf(me);
+  const enAz = frontMap().get(target);
+  if (!enAz || istenen >= enAz) return istenen;
+  return enAz <= Math.max(me.pool, istenen) ? enAz : istenen;
+}
+
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
-  const troops = commitOf(me);
+  const istenen = commitOf(me);
+  // En ucuz komşu cephe: dokunulacak yer belli değilken gidecek asker en az bu.
+  let enUcuz = Infinity;
+  for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
+  const yuvarlandi = enUcuz < Infinity && enUcuz > istenen
+    && enUcuz <= Math.max(me.pool, istenen);
+  const troops = yuvarlandi ? enUcuz : istenen;
   const elde = Math.max(0, me.pool);
   const borc = Math.max(0, troops - elde);
   $('pct-label').innerHTML =
     `<b>${fmt(troops)}</b> asker` +
+    (yuvarlandi ? ' <span class="floor">· en küçük hamle</span>' : '') +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
   // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
   // hazineyle kayan bir eşik oynarken kestirilemez.
@@ -720,8 +756,10 @@ function frame(now) {
 
 window.__rb = {
   sim, ui, view, W, H, S, focusHome, fitStage, sfx,
+  // arayüzün "kaç asker gidecek" hesabı — test bunu etiketle karşılaştırıyor
+  commitOf, gidecek,
   api: {
-    startAttack, cancelAttack, canAttack, attackCost, frontCost, formAlliance, breakAlliance,
+    startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },
