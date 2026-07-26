@@ -947,10 +947,10 @@ const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
 // dengesini değiştirmez (hem gelirler hem tavanlar hem bedeller birlikte iner).
 const TROOP_SCALE = 1 / 3.5;
 // Buna EK olarak toprak ucuzlar: aynı askerle daha çok yer alırsın.
-const LAND_CHEAP = 1.6;
+const LAND_CHEAP = 1.0;
 
 // Ekonominin hızı — birimsiz. Asker ölçeğinden bağımsızdır.
-const SPEED = 4;
+const SPEED = 2;
 // Arsa ödemesi asker birimindedir, bu yüzden asker ölçeğiyle birlikte küçülür.
 const INCOME_SCALE = SPEED * TROOP_SCALE;
 // Arazi geliri toprakla üstel artar ama üs neredeyse 1: büyümek çok az
@@ -971,7 +971,7 @@ const CAP_BOOST = 10;
 const SOFT_MULT = 40 * CAP_BOOST * TROOP_SCALE;   // yumuşak tavan = toprak × bu
 const HARD_MULT = 60 * CAP_BOOST * TROOP_SCALE;   // sert tavan — faiz burada tam durur
 const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
-const EARLY_SECS = 100;               // bu sürede 1'e iner
+const EARLY_SECS = 160;             // bu sürede 1'e iner — oyun yavaşlayınca pencere de uzadı
 const START_MULT = 18 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
 
 // --- borçlanma ---
@@ -2665,7 +2665,7 @@ window.__rb = {
   api: {
     startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
-    tickProgress, tickIndex, ticksToIncome, secsToIncome,
+    tickProgress, tickIndex, ticksToIncome, secsToIncome, incomePayout,
   },
 };
 

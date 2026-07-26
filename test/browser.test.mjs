@@ -162,7 +162,9 @@ check('göstergedeki ✕ seferi geri çağırıyor', await page.evaluate(async (
   return sonra === once - 1 && !sim.attacks.includes(ek);
 }));
 
-await page.waitForTimeout(1600);
+// Savaş cephesi 9 sn, tarafsız cephe 3.6 sn sürüyor; dalganın ilk halkayı
+// düşürmesi için yeterince bekle.
+await page.waitForTimeout(4500);
 const spread = await info();
 check('sınır fiilen yayılıyor', spread.cells > before.cells,
   `${before.cells} → ${spread.cells}`);
@@ -290,8 +292,11 @@ check('gelir tam onuncu tikte yatıyor', await page.evaluate(async () => {
       oncekiTik = sim.tickNo; sonPool = me.pool;
     }
   }
-  // gelir tiki toprakla orantılı bir ödeme yapmalı (tavana takılmadıysa)
-  return artis !== null && (artis >= me.cells * 0.9 || me.pool >= api.hardCap(sim, me) - 1);
+  // Gelir tiki, sim'in ilan ettiği arsa ödemesi kadar yatırmalı. Sabit bir
+  // "toprak kadar" beklentisi yanlış: ödeme INCOME_SCALE ile ölçekleniyor.
+  const beklenen = api.incomePayout(sim, me).land;
+  return artis !== null
+    && (artis >= beklenen * 0.9 || me.pool >= api.hardCap(sim, me) - 1);
 }));
 await page.screenshot({ path: path.join(OUT, '04b-dongu.png') });
 

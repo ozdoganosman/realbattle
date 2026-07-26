@@ -860,7 +860,7 @@ window.__rb = {
   api: {
     startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
-    tickProgress, tickIndex, ticksToIncome, secsToIncome,
+    tickProgress, tickIndex, ticksToIncome, secsToIncome, incomePayout,
   },
 };
 
