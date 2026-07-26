@@ -2,22 +2,21 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RealBattle — 1444</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 6v11c0 7 5 11 12 13 7-2 12-6 12-13V6z' fill='%231f7a4d' stroke='%232b1f14' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 6v11c0 7 5 11 12 13 7-2 12-6 12-13V6z' fill='%231f9159' stroke='%232b1f14' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="topbar">
     <div class="tb-left">
       <span id="tb-nation" class="tb-item"></span>
-      <span class="tb-item" title="Hazine">🪙 <b id="tb-gold">0</b></span>
-      <span class="tb-item" title="Garnizondaki asker / tavan">⚔️ <b id="tb-troops">0</b><span class="dim"> / <span id="tb-cap">0</span></span></span>
-      <span class="tb-item" title="Kıtanın yüzdesi">🏳️ <b id="tb-land">0%</b></span>
+      <span class="tb-item" title="Askerin"><span class="ic">⚔</span><b id="tb-troops">0</b><span class="dim">/<span id="tb-cap">0</span></span></span>
+      <span class="tb-item" title="Kıtanın yüzdesi"><span class="ic">▰</span><b id="tb-land">0%</b></span>
       <span id="tb-lock" class="tb-item lock hidden"></span>
     </div>
-    <div class="tb-mid"><span id="tb-date">Ocak 1444</span></div>
     <div class="tb-right">
+      <button id="btn-sound" class="spd" title="Ses">♪</button>
       <button id="btn-pause" class="spd" title="Duraklat">❙❙</button>
       <button id="btn-play" class="spd active" title="Normal">▶</button>
       <button id="btn-fast" class="spd" title="Hızlı">▶▶</button>
@@ -31,7 +30,8 @@
         <canvas id="fx"></canvas>
       </div>
       <div id="log"></div>
-      <div id="hint-bar">Kendi toprağından <b>bas–sürükle–bırak</b>: ordu o yöne fırlar.</div>
+      <div id="target-chip" class="hidden"></div>
+      <div id="hint-bar">Saldırmak için düşman ya da boş toprağa <b>dokun</b>.</div>
       <div id="zoom-ctl">
         <button id="zoom-in" title="Yakınlaştır">+</button>
         <button id="zoom-out" title="Uzaklaştır">−</button>
@@ -42,22 +42,23 @@
     <div id="panel">
       <button id="drawer" aria-expanded="false">
         <span class="grip"></span>
-        <span id="drawer-label">Krallıklar ve Divan</span>
+        <span id="drawer-label">Krallıklar</span>
       </button>
+
       <div class="sec">
-        <div class="sec-h">Sefer Gücü</div>
-        <input id="pct" type="range" min="10" max="95" value="55">
+        <div class="sec-h">Saldırı Gücü</div>
+        <input id="pct" type="range" min="5" max="100" value="50">
         <div id="pct-label" class="pct-label"></div>
       </div>
 
-      <div class="sec" id="sec-inbox">
-        <div class="sec-h">Divan</div>
-        <div id="inbox"></div>
+      <div class="sec hidden" id="sec-fronts">
+        <div class="sec-h">Süren Seferler</div>
+        <div id="fronts"></div>
       </div>
 
-      <div class="sec">
-        <div class="sec-h">Bölge</div>
-        <div id="region-info" class="dim-i">İncelemek için bir bölge seç.</div>
+      <div class="sec hidden" id="sec-offers">
+        <div class="sec-h">İttifak Teklifleri</div>
+        <div id="offers"></div>
       </div>
 
       <div class="sec grow">
@@ -72,13 +73,12 @@
       <h1>RealBattle</h1>
       <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
       <div class="rules">
-        <div><b>Bas–sürükle–bırak.</b> Ordu sınır boyunca değil, fırlattığın yönde ilerler.</div>
-        <div><b>İlerledikçe erir.</b> Toprak kazanır ama her hücre asker yer; dağ ve kale pahalıdır.</div>
-        <div><b>Ordular çarpışır.</b> Karşılaşan iki ordu biri bitene kadar birbirini yer.</div>
-        <div><b>Kuşatılan cep yutulur.</b> Düşman toprağını tamamen sararsan tek lokmada alırsın.</div>
-        <div><b>İttifak kur, birlikte savaş.</b> Ama ittifakı bozan <b>20 saniye</b> hiç saldıramaz.</div>
+        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — sınırın o tarafa doğru dalga hâlinde ilerler.</div>
+        <div><b>Asker toprakla büyür.</b> Ne kadar çok toprak, o kadar hızlı asker.</div>
+        <div><b>Kalabalık ordu iyi savunur.</b> Askeri toprağına oranla yoğun olana saldırmak pahalıdır.</div>
+        <div><b>İttifak kur.</b> Ama bozan <b>20 saniye</b> hiçbir yere saldıramaz.</div>
       </div>
-      <p class="goal">Kıtanın <b>%55</b>'ine hükmet.</p>
+      <p class="goal">Kıtanın <b>%60</b>'ına hükmet.</p>
       <div id="nation-list"></div>
       <button id="btn-random">⚄ Rastgele Krallık</button>
     </div>

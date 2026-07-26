@@ -25,7 +25,8 @@ function strip(src, name) {
   return out;
 }
 
-const MODULES = ['js/world.js', 'js/sim.js', 'js/render.js', 'js/game.js'];
+// bağımlılık sırası: world ve audio kimseye bağlı değil, game hepsine bağlı
+const MODULES = ['js/world.js', 'js/audio.js', 'js/sim.js', 'js/render.js', 'js/game.js'];
 const script = MODULES
   .map(f => `// ${'='.repeat(28)} ${f}\n${strip(read(f), f)}`)
   .join('\n');

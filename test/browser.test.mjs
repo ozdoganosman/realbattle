@@ -1,5 +1,5 @@
-// Tarayıcı testi: gerçek fare ile bas–sürükle–bırak, çizim ve arayüz akışı.
-// Kendi statik sunucusunu ayağa kaldırır.  Çalıştırma: npm run test:browser
+// Tarayıcı testi: tıkla-saldır akışı, çizim, hissiyat katmanı, arayüz.
+// Kendi statik sunucusunu kaldırır.  Çalıştırma: npm run test:browser
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -9,10 +9,7 @@ import { chromium } from 'playwright';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.env.SHOT_DIR || path.join(ROOT, '.shots');
-const MIME = {
-  '.html': 'text/html', '.js': 'text/javascript',
-  '.css': 'text/css', '.svg': 'image/svg+xml',
-};
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
@@ -25,7 +22,6 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
-
 fs.mkdirSync(OUT, { recursive: true });
 
 let pass = 0, fail = 0;
@@ -36,10 +32,9 @@ const check = (ad, ok, detay = '') => {
 
 const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  args: ['--no-sandbox'],
+  args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'],
 });
 const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
-
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
@@ -48,106 +43,122 @@ await page.goto(base + (process.env.PAGE || '/index.html'), { waitUntil: 'networ
 await page.waitForTimeout(500);
 
 console.log('\nAçılış');
-check('açılış ekranı 16 krallık listeliyor',
-  (await page.$$('.nation-btn')).length === 16);
+check('16 krallık listeleniyor', (await page.$$('.nation-btn')).length === 16);
 check('harita ilk karede çiziliyor', await page.evaluate(() => {
   const c = document.getElementById('map');
-  const ctx = c.getContext('2d');
-  const d = ctx.getImageData(0, 0, c.width, c.height).data;
-  let nonEmpty = 0;
-  for (let i = 3; i < d.length; i += 4 * 977) if (d[i] > 0) nonEmpty++;
-  return nonEmpty > 10;
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 4 * 977) if (d[i] > 0) n++;
+  return n > 10;
 }));
 await page.screenshot({ path: path.join(OUT, '01-acilis.png') });
 
-await (await page.$$('.nation-btn'))[12].click();     // Osmanlı
-await page.waitForTimeout(400);
+await (await page.$$('.nation-btn'))[12].click();
+await page.waitForTimeout(600);
 
 const info = () => page.evaluate(() => {
-  const { sim } = window.__rb;
+  const { sim, ui } = window.__rb;
   const me = sim.nations[sim.playerId];
   return {
     ad: me.name, cells: me.cells, pool: Math.round(me.pool),
-    armies: sim.armies.length, t: +sim.t.toFixed(1),
-    alive: sim.nations.filter(n => n.alive).length,
-    locked: me.lockUntil > sim.realT,
+    fronts: sim.attacks.filter(a => a.from === me.id).length,
+    t: +sim.t.toFixed(1), shake: +ui.shake.toFixed(1),
+    allies: me.allies.size, locked: me.lockUntil > sim.realT,
   };
 });
 
 console.log('\nOyuna giriş');
 const start = await info();
-check('oyuncu krallığı seçildi ve toprağı var', start.ad === 'Osmanlı' && start.cells > 0,
-  JSON.stringify(start));
-check('üst çubuk oyuncu adını gösteriyor',
+check('oyuncu krallığı seçildi', start.ad === 'Osmanlı' && start.cells > 0, JSON.stringify(start));
+check('üst çubuk oyuncuyu gösteriyor',
   (await page.textContent('#tb-nation')).trim() === 'Osmanlı');
+check('başlangıçta yurda yakınlaşılmış',
+  await page.evaluate(() => window.__rb.view.scale > 1.2));
 
-// ---------------------------------------------------------------- sürükleme
-console.log('\nBas–sürükle–bırak');
-const front = await page.evaluate(() => {
+// ---------------------------------------------------------------- saldırı
+console.log('\nTıkla — sınır dalgası');
+
+// oyuncunun sınırındaki bir düşman/boş hücrenin ekran konumu
+const target = await page.evaluate(() => {
   const { sim, W, H } = window.__rb;
   const me = sim.nations[sim.playerId];
-  for (let i = 0; i < W * H; i++) {
-    if (sim.owner[i] !== me.id) continue;
-    const x = i % W, y = (i / W) | 0;
-    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const n = (y + oy) * W + (x + ox);
-      if (sim.world.isLand[n] && sim.owner[n] !== me.id) return { x, y, dx: ox, dy: oy };
+  const r = document.getElementById('map').getBoundingClientRect();
+  for (let c = 0; c < W * H; c++) {
+    if (sim.owner[c] !== me.id) continue;
+    const x = c % W;
+    const nb = [];
+    if (x > 0) nb.push(c - 1);
+    if (x < W - 1) nb.push(c + 1);
+    if (c >= W) nb.push(c - W);
+    if (c < W * (H - 1)) nb.push(c + W);
+    for (const n of nb) {
+      if (!sim.world.isLand[n] || sim.owner[n] === me.id) continue;
+      const nx = n % W, ny = (n / W) | 0;
+      const sx = r.left + (nx + 0.5) / W * r.width;
+      const sy = r.top + (ny + 0.5) / H * r.height;
+      if (sx > 30 && sx < 1470 && sy > 70 && sy < 870)
+        return { sx, sy, owner: sim.owner[n] };
     }
   }
   return null;
 });
-check('oyuncunun sınır hücresi bulundu', !!front);
+check('sınırda tıklanabilir hedef var', !!target);
 
-const geo = await page.evaluate(() => {
-  const r = document.getElementById('map').getBoundingClientRect();
-  return { left: r.left, top: r.top, w: r.width, h: r.height, W: window.__rb.W, H: window.__rb.H };
-});
-const p0 = {
-  x: geo.left + (front.x + 0.5) / geo.W * geo.w,
-  y: geo.top + (front.y + 0.5) / geo.H * geo.h,
-};
-const p1 = { x: p0.x + front.dx * 190, y: p0.y + front.dy * 190 };
-
-await page.mouse.move(p0.x, p0.y);
-await page.mouse.down();
-await page.mouse.move((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, { steps: 8 });
-await page.waitForTimeout(150);
-await page.mouse.move(p1.x, p1.y, { steps: 8 });
+// üstüne gelince hedef bilgisi çıkmalı
+await page.mouse.move(target.sx, target.sy);
 await page.waitForTimeout(250);
+check('hedefin üstüne gelince bilgi baloncuğu çıkıyor',
+  !(await page.$eval('#target-chip', el => el.classList.contains('hidden'))));
+check('hedefin toprağı vurgulanıyor (hover)',
+  await page.evaluate(() => window.__rb.ui.hoverOwner !== undefined));
+await page.screenshot({ path: path.join(OUT, '02-hedef.png') });
 
-const dragState = await page.evaluate(() => {
-  const d = window.__rb.ui.drag;
-  return d ? { active: d.active, troops: Math.round(d.troops) } : null;
-});
-check('sürükleme sırasında önizleme oluşuyor', !!dragState && dragState.troops > 0,
-  JSON.stringify(dragState));
-await page.screenshot({ path: path.join(OUT, '02-surukleme.png') });
+const before = await info();
+await page.mouse.click(target.sx, target.sy);
+await page.waitForTimeout(200);
+const afterClick = await info();
+check('tıklayınca sefer başlıyor', afterClick.fronts === 1, JSON.stringify(afterClick));
+check('sefer havuzdan asker düşürüyor', afterClick.pool < before.pool,
+  `${before.pool} → ${afterClick.pool}`);
+check('tıklama sarsıntı tetikliyor', afterClick.shake > 0, `shake=${afterClick.shake}`);
+check('süren seferler paneli açıldı',
+  !(await page.$eval('#sec-fronts', el => el.classList.contains('hidden'))));
 
-const poolBefore = (await info()).pool;
-await page.mouse.up();
-await page.waitForTimeout(250);
-const afterDrag = await info();
-check('bırakınca ordu fırlıyor', afterDrag.armies >= 1, JSON.stringify(afterDrag));
-check('fırlatma garnizondan asker düşürüyor', afterDrag.pool < poolBefore,
-  `${poolBefore} → ${afterDrag.pool}`);
+await page.waitForTimeout(1600);
+const spread = await info();
+check('sınır fiilen yayılıyor', spread.cells > before.cells,
+  `${before.cells} → ${spread.cells}`);
+await page.screenshot({ path: path.join(OUT, '03-yayilma.png') });
 
-await page.waitForTimeout(2000);
-const moved = await page.evaluate(() => {
-  const a = window.__rb.sim.armies[0];
-  return a ? { x: +a.x.toFixed(1), y: +a.y.toFixed(1), troops: Math.round(a.troops) } : null;
-});
-check('ordu haritada ilerliyor', !!moved, JSON.stringify(moved));
-await page.screenshot({ path: path.join(OUT, '03-ordu.png') });
+check('ele geçen hücreler parlama için damgalanıyor', await page.evaluate(() => {
+  const { sim, W, H } = window.__rb;
+  let n = 0;
+  for (let c = 0; c < W * H; c++) if (sim.lastCapture[c] > 0) n++;
+  return n > 5;
+}));
+
+// ---------------------------------------------------------------- geri çağırma
+console.log('\nSeferi geri çağırma');
+const poolBeforeCancel = (await info()).pool;
+const stillRunning = await page.evaluate(() =>
+  window.__rb.sim.attacks.some(a => a.from === window.__rb.sim.playerId));
+if (stillRunning) {
+  await page.click('#fronts button');
+  await page.waitForTimeout(200);
+  const c = await info();
+  check('geri çağırınca sefer kapanıyor', c.fronts === 0);
+  check('kalan asker garnizona dönüyor', c.pool > poolBeforeCancel,
+    `${poolBeforeCancel} → ${c.pool}`);
+} else {
+  check('sefer kendiliğinden bitti (geri çağırma denenemedi)', true);
+}
 
 // ---------------------------------------------------------------- oynanış
 console.log('\nSimülasyon akışı');
 await page.click('#btn-fast');
-await page.waitForTimeout(8000);
+await page.waitForTimeout(7000);
 const mid = await info();
-check('hızlı modda zaman ilerliyor', mid.t > afterDrag.t + 5, `t=${mid.t}`);
-check('oyuncu toprak kazandı', mid.cells > start.cells, `${start.cells} → ${mid.cells}`);
-await page.screenshot({ path: path.join(OUT, '04-oyun.png') });
-
+check('hızlı modda zaman ilerliyor', mid.t > spread.t + 5, `t=${mid.t}`);
 check('duraklat gerçekten durduruyor', await page.evaluate(async () => {
   document.getElementById('btn-pause').click();
   const t0 = window.__rb.sim.t;
@@ -155,35 +166,59 @@ check('duraklat gerçekten durduruyor', await page.evaluate(async () => {
   return window.__rb.sim.t === t0;
 }));
 await page.click('#btn-play');
+await page.screenshot({ path: path.join(OUT, '04-oyun.png') });
 
-// ---------------------------------------------------------------- diplomasi
-console.log('\nDiplomasi ve ihanet cezası');
+// ---------------------------------------------------------------- ittifak
+console.log('\nİttifak ve ihanet cezası');
 const betray = await page.evaluate(() => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
-  const other = sim.nations.find(n => n.alive && n !== me && !me.wars.has(n.id));
+  const other = sim.nations.find(n => n.alive && n !== me);
   api.formAlliance(sim, me, other);
   const kuruldu = me.allies.has(other.id);
+  const saldirilabilir = api.canAttack(sim, me, other.id);
   api.breakAlliance(sim, me, other);
-  return { kuruldu, cezali: me.lockUntil > sim.realT, kalan: +(me.lockUntil - sim.realT).toFixed(1) };
+  return {
+    kuruldu, saldirilabilir,
+    cezali: me.lockUntil > sim.realT,
+    kalan: +(me.lockUntil - sim.realT).toFixed(1),
+  };
 });
 check('ittifak kurulabiliyor', betray.kuruldu);
-check('ittifakı bozan cezalanıyor (~20sn)', betray.cezali && betray.kalan > 19 && betray.kalan <= 20,
-  JSON.stringify(betray));
-
-await page.waitForTimeout(400);
-check('üst çubukta ihanet cezası görünüyor',
+check('müttefike saldırı engelleniyor', betray.saldirilabilir === false);
+check('ittifakı bozan ~20sn cezalanıyor',
+  betray.cezali && betray.kalan > 19 && betray.kalan <= 20, JSON.stringify(betray));
+await page.waitForTimeout(300);
+check('üst çubukta ceza görünüyor',
   !(await page.$eval('#tb-lock', el => el.classList.contains('hidden'))));
-
-const blocked = await page.evaluate(() => {
+check('cezalıyken tıklayarak saldırılamıyor', await page.evaluate(() => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
-  const before = sim.armies.length;
-  api.launchArmy(sim, me, 5, 5, 1, 0, 200, 20);
-  return sim.armies.length === before;
-});
-check('cezalıyken ordu fırlatılamıyor', blocked);
+  const before = sim.attacks.length;
+  api.startAttack(sim, me, -1, me.pool * 0.5);
+  return sim.attacks.length === before;
+}));
 await page.screenshot({ path: path.join(OUT, '05-ceza.png') });
+
+// ---------------------------------------------------------------- his
+console.log('\nHissiyat katmanı');
+check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));
+check('ses düğmesi sesi kapatıp açıyor', await page.evaluate(async () => {
+  const b = document.getElementById('btn-sound');
+  const before = window.__rb.sfx.on;
+  b.click();
+  const off = window.__rb.sfx.on;
+  b.click();
+  return before === true && off === false && window.__rb.sfx.on === true;
+}));
+check('sayaçlar sıçramadan akıyor', await page.evaluate(async () => {
+  const { ui, sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  ui.shownTroops = 0;                    // sıfırdan başlat
+  await new Promise(r => setTimeout(r, 120));
+  const ara = ui.shownTroops;
+  return ara > 0 && ara < me.pool;       // yolda, henüz varmamış
+}));
 
 // ---------------------------------------------------------------- bitiş
 console.log('\nBitiş ekranı');

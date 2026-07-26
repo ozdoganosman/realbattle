@@ -1,13 +1,14 @@
-// Çizim katmanı. Simülasyonu sadece OKUR, asla değiştirmez.
+// Çizim katmanı. Simülasyonu sadece OKUR.
+// Hissiyatın büyük kısmı burada: ele geçen hücrenin beyaz parlaması,
+// hedefin üstüne gelince bütün toprağının aydınlanması, dalgalar, parçacıklar.
 
-import { W, H, S, idx, clamp, PLAINS, FOREST, MOUNT } from './world.js';
+import { W, H, S, idx, clamp, TERRAIN_SHADE } from './world.js';
 
-const SEA = [58, 140, 128];
-const SEA_DEEP = [42, 112, 103];
-const NEUTRAL = [206, 190, 154];
+const SEA = [66, 158, 142];
+const SEA_SHALLOW = [84, 186, 167];
+const NEUTRAL = [216, 201, 163];      // sıcak parşömen — gri değil
 
-// arazi başına parlaklık çarpanı
-const TF = [1.0, 0.84, 0.66];
+const FLASH = 0.55;          // ele geçirme parlamasının süresi (oyun sn)
 
 function hexRGB(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -21,87 +22,104 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
   const fctx = fxCanvas.getContext('2d');
   mctx.imageSmoothingEnabled = false;
 
-  // düşük çözünürlüklü renk tamponu → ölçekleyerek çiz (hızlı)
   const off = document.createElement('canvas');
   off.width = W; off.height = H;
   const octx = off.getContext('2d');
   const img = octx.createImageData(W, H);
   const px = img.data;
 
-  // ulus × arazi renk tablosu
-  const palette = sim.nations.map(n => {
-    const [r, g, b] = hexRGB(n.color);
-    return TF.map(f => [(r * f) | 0, (g * f) | 0, (b * f) | 0]);
-  });
-  const neutralPal = TF.map(f => [
-    (NEUTRAL[0] * f) | 0, (NEUTRAL[1] * f * 0.98) | 0, (NEUTRAL[2] * f * 0.9) | 0]);
+  const pal = sim.nations.map(n => hexRGB(n.color));
+  const ripples = [];
+  const bursts = [];
 
-  function paintBase() {
-    const { isLand, terrain } = sim.world;
-    for (let i = 0, p = 0; i < W * H; i++, p += 4) {
-      let c;
+  function ripple(x, y, color) { ripples.push({ x, y, color, age: 0 }); }
+  function burst(x, y, color) {
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      const sp = 26 + (i % 5) * 12;
+      bursts.push({ x: x * S, y: y * S, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, color });
+    }
+  }
+
+  // ---------------------------------------------------------------- taban
+
+  function paintBase(hover) {
+    const { isLand, shade, terrain } = sim.world;
+    const t = sim.t;
+    for (let y = 0, i = 0, p = 0; y < H; y++) for (let x = 0; x < W; x++, i++, p += 4) {
+      let r, g, b;
       if (!isLand[i]) {
-        // kıyıya yakın su daha açık
-        const x = i % W, y = (i / W) | 0;
-        let near = false;
-        if (x > 0 && isLand[i - 1]) near = true;
-        else if (x < W - 1 && isLand[i + 1]) near = true;
-        else if (y > 0 && isLand[i - W]) near = true;
-        else if (y < H - 1 && isLand[i + W]) near = true;
-        c = near ? SEA : SEA_DEEP;
+        const near = (x > 0 && isLand[i - 1]) || (x < W - 1 && isLand[i + 1])
+          || (y > 0 && isLand[i - W]) || (y < H - 1 && isLand[i + W]);
+        const c = near ? SEA_SHALLOW : SEA;
+        r = c[0]; g = c[1]; b = c[2];
       } else {
         const o = sim.owner[i];
-        c = (o >= 0 ? palette[o] : neutralPal)[terrain[i]];
+        const c = o >= 0 ? pal[o] : NEUTRAL;
+        // Renk okunaklı kalsın diye gölge hafif; üstüne ince bir tane dokusu.
+        // x ve y ayrı karıştırılmalı — düz i üzerinden hash çapraz şerit yapar.
+        let h = (x * 73856093) ^ (y * 19349663);
+        h = (h ^ (h >>> 13)) >>> 0;
+        const grain = (h & 11) - 5.5;
+        // arazi tipi ve yükseklik yalnız renk tonunu değiştirir, oynanışı değil
+        const f = TERRAIN_SHADE[terrain[i]] * (0.96 + shade[i] * 0.08);
+        r = c[0] * f + grain; g = c[1] * f + grain; b = c[2] * f + grain;
+
+        // hedefin üstündeyken bütün toprağı aydınlansın
+        if (hover !== undefined && o === hover) { r += 46; g += 46; b += 46; }
+
+        // yeni ele geçen hücre beyaz parlar, sonra rengine oturur
+        const age = t - sim.lastCapture[i];
+        if (age >= 0 && age < FLASH) {
+          const k = 1 - age / FLASH;
+          const w = k * k * 235;
+          r += (255 - r) * (w / 255);
+          g += (255 - g) * (w / 255);
+          b += (255 - b) * (w / 255);
+        }
       }
-      px[p] = c[0]; px[p + 1] = c[1]; px[p + 2] = c[2]; px[p + 3] = 255;
+      px[p] = r > 255 ? 255 : r < 0 ? 0 : r;
+      px[p + 1] = g > 255 ? 255 : g < 0 ? 0 : g;
+      px[p + 2] = b > 255 ? 255 : b < 0 ? 0 : b;
+      px[p + 3] = 255;
     }
     octx.putImageData(img, 0, 0);
   }
 
   function paintBorders() {
     const { isLand } = sim.world;
-    mctx.fillStyle = 'rgba(24,14,6,0.78)';
+    mctx.fillStyle = 'rgba(18,12,6,0.72)';
     const t = Math.max(1, (S / 3) | 0);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = idx(x, y);
       if (!isLand[i]) continue;
       const o = sim.owner[i];
-      if (x < W - 1) {
-        const n = i + 1;
-        if (isLand[n] && sim.owner[n] !== o) mctx.fillRect((x + 1) * S - t / 2, y * S, t, S);
-      }
-      if (y < H - 1) {
-        const n = i + W;
-        if (isLand[n] && sim.owner[n] !== o) mctx.fillRect(x * S, (y + 1) * S - t / 2, S, t);
-      }
+      if (x < W - 1 && isLand[i + 1] && sim.owner[i + 1] !== o)
+        mctx.fillRect((x + 1) * S - t / 2, y * S, t, S);
+      if (y < H - 1 && isLand[i + W] && sim.owner[i + W] !== o)
+        mctx.fillRect(x * S, (y + 1) * S - t / 2, S, t);
     }
   }
 
+  // Dekoratif yerleşimler — hiçbir oyun etkisi yok, harita dolu dursun diye.
   function paintCities() {
     mctx.textAlign = 'center';
     mctx.textBaseline = 'middle';
-    for (const city of sim.world.cities) {
-      if (city.size < 1.1 && !city.castle) continue;
-      const x = city.x * S + S / 2, y = city.y * S + S / 2;
-      const r = clamp(2 + city.size * 1.4, 2.5, 6);
+    for (const c of sim.world.cities) {
+      const x = c.x * S + S / 2, y = c.y * S + S / 2;
+      const r = clamp(1.8 + c.size * 1.5, 2, 6);
       mctx.beginPath();
       mctx.arc(x, y, r, 0, Math.PI * 2);
-      mctx.fillStyle = city.owner >= 0 ? 'rgba(255,248,225,0.92)' : 'rgba(120,100,70,0.75)';
+      mctx.fillStyle = 'rgba(244,232,204,0.9)';
       mctx.fill();
       mctx.lineWidth = 1;
-      mctx.strokeStyle = 'rgba(30,18,8,0.85)';
+      mctx.strokeStyle = 'rgba(34,22,10,0.72)';
       mctx.stroke();
-      if (city.castle > 0) {
-        // kale: küçük mazgallı kule silueti
-        mctx.fillStyle = 'rgba(38,24,10,0.9)';
-        const w = 3 + city.castle;
-        mctx.fillRect(x - w / 2, y - r - 4 - city.castle, w, 3 + city.castle);
-      }
-      if (city.size > 1.9) {
-        mctx.font = `${clamp(6 + city.size, 7, 11)}px Georgia, serif`;
-        mctx.fillStyle = 'rgba(28,18,8,0.72)';
-        mctx.fillText(city.name, x, y + r + 7);
-      }
+
+      const fs = clamp(5.5 + c.size * 1.5, 6, 10);
+      mctx.font = `${fs}px Georgia, serif`;
+      mctx.fillStyle = 'rgba(30,20,8,0.66)';
+      mctx.fillText(c.name, x, y + r + fs * 0.75);
     }
   }
 
@@ -109,157 +127,83 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
     mctx.textAlign = 'center';
     mctx.textBaseline = 'middle';
     for (const nat of sim.nations) {
-      if (!nat.alive || nat.cells < 30) continue;
-      const size = clamp(Math.sqrt(nat.cells) * 0.55, 11, 30);
+      if (!nat.alive || nat.cells < 45) continue;
+      const size = clamp(Math.sqrt(nat.cells) * 0.5, 11, 30);
       mctx.font = `bold ${size}px Georgia, serif`;
-      mctx.lineWidth = 3;
-      mctx.strokeStyle = 'rgba(245,235,205,0.55)';
+      mctx.lineWidth = 3.5;
+      mctx.strokeStyle = 'rgba(250,244,225,0.5)';
       mctx.strokeText(nat.name, nat.cx * S, nat.cy * S);
-      mctx.fillStyle = 'rgba(28,16,6,0.82)';
+      mctx.fillStyle = 'rgba(24,14,4,0.85)';
       mctx.fillText(nat.name, nat.cx * S, nat.cy * S);
     }
   }
 
-  function renderMap() {
-    paintBase();
-    mctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+  function renderMap(hover) {
+    paintBase(hover);
     mctx.drawImage(off, 0, 0, mapCanvas.width, mapCanvas.height);
     paintBorders();
     paintCities();
     paintLabels();
   }
 
-  // ---------------------------------------------------------- efekt katmanı
+  // ---------------------------------------------------------------- efektler
 
-  function armyShape(ctx, a, nat, now) {
-    const x = a.x * S, y = a.y * S;
-    const size = clamp(6 + Math.sqrt(a.troops) * 0.55, 7, 20);
-
-    ctx.save();
-    ctx.translate(x, y);
-
-    // gölge
-    ctx.beginPath();
-    ctx.ellipse(1.5, size * 0.55, size * 0.75, size * 0.32, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.fill();
-
-    // yön oku
-    const ang = Math.atan2(a.dy, a.dx);
-    ctx.save();
-    ctx.rotate(ang);
-    ctx.beginPath();
-    ctx.moveTo(size * 0.85, 0);
-    ctx.lineTo(size * 0.3, -size * 0.42);
-    ctx.lineTo(size * 0.3, size * 0.42);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,250,230,0.9)';
-    ctx.fill();
-    ctx.restore();
-
-    // kalkan gövdesi
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.55, -size * 0.62);
-    ctx.lineTo(size * 0.55, -size * 0.62);
-    ctx.lineTo(size * 0.55, size * 0.12);
-    ctx.quadraticCurveTo(size * 0.55, size * 0.78, 0, size * 0.95);
-    ctx.quadraticCurveTo(-size * 0.55, size * 0.78, -size * 0.55, size * 0.12);
-    ctx.closePath();
-    ctx.fillStyle = nat.color;
-    ctx.fill();
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = a.clashing > 0
-      ? `rgba(255,${60 + 120 * Math.abs(Math.sin(now / 90))},40,0.95)`
-      : 'rgba(26,16,6,0.9)';
-    ctx.stroke();
-
-    // güç çubuğu (başlangıca göre kalan)
-    const frac = clamp(a.troops / a.start, 0, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(-size * 0.55, -size * 1.05, size * 1.1, 3);
-    ctx.fillStyle = frac > 0.5 ? '#7ed07e' : frac > 0.25 ? '#e8c14a' : '#e05b4a';
-    ctx.fillRect(-size * 0.55, -size * 1.05, size * 1.1 * frac, 3);
-
-    ctx.font = `bold ${clamp(size * 0.62, 8, 12)}px Georgia, serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeText(Math.round(a.troops), 0, size * 0.1);
-    ctx.fillStyle = '#fff8e6';
-    ctx.fillText(Math.round(a.troops), 0, size * 0.1);
-
-    ctx.restore();
-  }
-
-  function renderFx(state) {
-    const now = state.now;
+  function renderFx(state, realDt) {
     fctx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    const now = state.now;
 
-    // çarpışma parıltıları
-    for (const a of sim.armies) {
-      if (!(a.clashing > 0)) continue;
-      const p = 0.5 + 0.5 * Math.sin(now / 70);
+    // saldırı cephesinin nabzı
+    for (const a of sim.attacks) {
+      if (a.lastX === undefined) continue;
+      const p = 0.5 + 0.5 * Math.sin(now / 110);
       fctx.beginPath();
-      fctx.arc(a.x * S, a.y * S, 14 + p * 8, 0, Math.PI * 2);
-      fctx.strokeStyle = `rgba(230,60,40,${0.25 + p * 0.4})`;
-      fctx.lineWidth = 2.5;
+      fctx.arc(a.lastX * S, a.lastY * S, 10 + p * 7, 0, Math.PI * 2);
+      fctx.strokeStyle = sim.nations[a.from].color;
+      fctx.globalAlpha = 0.25 + p * 0.3;
+      fctx.lineWidth = 3;
       fctx.stroke();
+      fctx.globalAlpha = 1;
     }
 
-    for (const a of sim.armies) armyShape(fctx, a, sim.nations[a.nat], now);
-
-    // sürükleme önizlemesi
-    const d = state.drag;
-    if (d && d.active) {
-      const x0 = d.x0 * S, y0 = d.y0 * S, x1 = d.x1 * S, y1 = d.y1 * S;
-      const nat = sim.nations[sim.playerId];
-      fctx.save();
-      fctx.setLineDash([9, 6]);
-      fctx.lineWidth = clamp(3 + Math.sqrt(d.troops) * 0.16, 3, 11);
-      fctx.strokeStyle = d.blocked ? 'rgba(210,60,50,0.85)' : nat.color;
+    // tıklama dalgaları
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      r.age += realDt;
+      const k = r.age / 0.55;
+      if (k >= 1) { ripples.splice(i, 1); continue; }
       fctx.beginPath();
-      fctx.moveTo(x0, y0); fctx.lineTo(x1, y1);
+      fctx.arc(r.x * S, r.y * S, 6 + k * 60, 0, Math.PI * 2);
+      fctx.strokeStyle = r.color;
+      fctx.globalAlpha = (1 - k) * 0.85;
+      fctx.lineWidth = 4 * (1 - k) + 1;
       fctx.stroke();
-      fctx.setLineDash([]);
+      fctx.globalAlpha = 1;
+    }
 
-      const ang = Math.atan2(y1 - y0, x1 - x0);
-      fctx.translate(x1, y1); fctx.rotate(ang);
-      fctx.beginPath();
-      fctx.moveTo(16, 0); fctx.lineTo(-6, -11); fctx.lineTo(-6, 11);
-      fctx.closePath();
-      fctx.fillStyle = d.blocked ? 'rgba(210,60,50,0.9)' : nat.color;
-      fctx.fill();
-      fctx.lineWidth = 1.5;
-      fctx.strokeStyle = 'rgba(20,12,4,0.85)';
-      fctx.stroke();
-      fctx.restore();
+    // yıkılan krallığın parçacıkları
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      const b = bursts[i];
+      b.age += realDt;
+      if (b.age > 1.1) { bursts.splice(i, 1); continue; }
+      b.x += b.vx * realDt; b.y += b.vy * realDt;
+      b.vy += 34 * realDt;
+      fctx.globalAlpha = clamp(1 - b.age / 1.1, 0, 1);
+      fctx.fillStyle = b.color;
+      fctx.fillRect(b.x - 2, b.y - 2, 4, 4);
+      fctx.globalAlpha = 1;
+    }
 
-      // çıkış noktası halkası
-      fctx.beginPath();
-      fctx.arc(x0, y0, 7, 0, Math.PI * 2);
-      fctx.strokeStyle = 'rgba(255,245,215,0.9)';
+    // hedef nişangâhı
+    if (state.hoverCell >= 0 && state.hoverOwner !== undefined) {
+      const x = (state.hoverCell % W) * S, y = ((state.hoverCell / W) | 0) * S;
+      const p = 0.5 + 0.5 * Math.sin(now / 220);
+      fctx.strokeStyle = `rgba(255,250,230,${0.45 + p * 0.4})`;
       fctx.lineWidth = 2;
+      fctx.beginPath();
+      fctx.arc(x, y, 11 + p * 3, 0, Math.PI * 2);
       fctx.stroke();
-
-      // etiket: gönderilecek asker + savaş uyarısı
-      const label = `${Math.round(d.troops)} asker`;
-      fctx.font = 'bold 15px Georgia, serif';
-      fctx.textAlign = 'center';
-      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2 - 16;
-      fctx.lineWidth = 3.5;
-      fctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      fctx.strokeText(label, mx, my);
-      fctx.fillStyle = '#fff8e6';
-      fctx.fillText(label, mx, my);
-      if (d.warn) {
-        fctx.font = 'bold 13px Georgia, serif';
-        fctx.strokeText(d.warn, mx, my + 17);
-        fctx.fillStyle = '#ffd28a';
-        fctx.fillText(d.warn, mx, my + 17);
-      }
     }
   }
 
-  return { renderMap, renderFx };
+  return { renderMap, renderFx, ripple, burst };
 }

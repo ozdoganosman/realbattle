@@ -1,14 +1,15 @@
-// İstemci katmanı: girdi, arayüz, ana döngü.
-// Oyun kuralları burada DEĞİL — hepsi sim.js içinde (sunucuya taşınabilir).
+// İstemci: girdi, arayüz, ana döngü, hissiyat.
+// Oyun kuralları burada DEĞİL — hepsi sim.js içinde.
 
-import { W, H, S, idx, clamp, TERRAIN } from './world.js';
+import { W, H, S, idx, clamp } from './world.js';
 import {
-  createSim, step, NATION_DEFS, dateLabel, WIN_FRAC, BETRAY_LOCK,
-  troopCap, power, landFrac, natOf, atWar, allied, truced, locked,
-  launchArmy, declareWar, makePeace, formAlliance, breakAlliance,
-  answerCall, log,
+  createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
+  troopCap, power, landFrac, allied, locked, density,
+  startAttack, cancelAttack, canAttack, attackCost,
+  formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
+import { sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
 const fmt = v => Math.round(v).toLocaleString('tr-TR');
@@ -21,11 +22,13 @@ const renderer = createRenderer(sim, mapCanvas, fxCanvas);
 
 const ui = {
   speed: 1, started: false,
-  drag: null,
-  selected: -1,
-  pct: 0.55,
-  lastLogLen: 0,
+  pct: 0.5,
+  hoverCell: -1, hoverOwner: undefined,
   now: 0,
+  shake: 0,
+  streak: 0, lastCells: 0,
+  shownTroops: 0, shownLand: 0,     // yumuşak akan sayaçlar
+  lastLogLen: 0,
 };
 
 // ------------------------------------------------------------------ görünüm
@@ -34,26 +37,18 @@ const stage = $('stage');
 const wrap = $('map-wrap');
 const view = { scale: 1, tx: 0, ty: 0 };
 
-function isNarrow() { return window.innerWidth <= 860; }
+const isNarrow = () => window.innerWidth <= 860;
 
-// Görünür harita alanı — map-wrap'in DOLGU HARİÇ kutusu. Dar ekranda alttaki
-// çekmece için ayrılan dolgu görünür alan değildir; kaydırma sınırları da
-// bu kutuya göre hesaplanmalı.
 function wrapBox() {
   const r = wrap.getBoundingClientRect();
   const cs = getComputedStyle(wrap);
   const pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
   const pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0;
-  return {
-    left: r.left + pl, top: r.top + pt,
-    width: r.width - pl - pr, height: r.height - pt - pb,
-  };
+  return { left: r.left + pl, top: r.top + pt, width: r.width - pl - pr, height: r.height - pt - pb };
 }
 
-// Sahnenin dönüşümsüz (flex ile ortalanmış) konumu. Uygulanmış dönüşümden
-// geri hesaplanamaz: clampView, view.tx güncellendikten AMA DOM'a yazılmadan
-// önce çalışır; o anda okunan dikdörtgen hâlâ eski dönüşümü taşır. Bu yüzden
-// dönüşümü geçici olarak kaldırıp doğrudan ölçüyoruz.
+// Sahnenin dönüşümsüz konumu — uygulanmış dönüşümden geri hesaplanamaz,
+// çünkü clampView, DOM'a yazılmadan önce çalışır.
 const base = { left: 0, top: 0 };
 function measureBase() {
   const prev = stage.style.transform;
@@ -72,64 +67,59 @@ function fitStage() {
   applyView();
 }
 
-function baseOrigin() { return base; }
-
 function clampView() {
-  const bw = stage.offsetWidth * view.scale;
-  const bh = stage.offsetHeight * view.scale;
+  const bw = stage.offsetWidth * view.scale, bh = stage.offsetHeight * view.scale;
   const wr = wrapBox();
-  const b = baseOrigin();
-  const fit = (base, size, wrapStart, wrapSize, t) => {
-    if (size <= wrapSize) return wrapStart + (wrapSize - size) / 2 - base;
-    return clamp(t, wrapStart + wrapSize - size - base, wrapStart - base);
+  const fit = (b, size, ws, wsize, t) => {
+    if (size <= wsize) return ws + (wsize - size) / 2 - b;
+    return clamp(t, ws + wsize - size - b, ws - b);
   };
-  view.tx = fit(b.left, bw, wr.left, wr.width, view.tx);
-  view.ty = fit(b.top, bh, wr.top, wr.height, view.ty);
+  view.tx = fit(base.left, bw, wr.left, wr.width, view.tx);
+  view.ty = fit(base.top, bh, wr.top, wr.height, view.ty);
 }
 
 function applyView() {
   clampView();
-  stage.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
-}
-
-// (u,v) = sahne içeriğine göre 0..1 konum; onu ekranda (sx,sy)'de tut.
-function anchorAt(u, v, sx, sy, newScale) {
-  const b = baseOrigin();
-  view.scale = newScale;
-  view.tx = sx - b.left - u * stage.offsetWidth * newScale;
-  view.ty = sy - b.top - v * stage.offsetHeight * newScale;
-  applyView();
+  // sarsıntı görünümün üstüne biner
+  const sx = ui.shake ? (Math.random() - 0.5) * ui.shake : 0;
+  const sy = ui.shake ? (Math.random() - 0.5) * ui.shake : 0;
+  stage.style.transform =
+    `translate(${view.tx + sx}px, ${view.ty + sy}px) scale(${view.scale})`;
 }
 
 function contentPoint(sx, sy) {
-  const b = baseOrigin();
   return {
-    u: (sx - b.left - view.tx) / (stage.offsetWidth * view.scale),
-    v: (sy - b.top - view.ty) / (stage.offsetHeight * view.scale),
+    u: (sx - base.left - view.tx) / (stage.offsetWidth * view.scale),
+    v: (sy - base.top - view.ty) / (stage.offsetHeight * view.scale),
   };
 }
 
-function zoomBy(factor) {
+function anchorAt(u, v, sx, sy, ns) {
+  view.scale = ns;
+  view.tx = sx - base.left - u * stage.offsetWidth * ns;
+  view.ty = sy - base.top - v * stage.offsetHeight * ns;
+  applyView();
+}
+
+function zoomBy(f) {
   const wr = wrapBox();
   const cx = wr.left + wr.width / 2, cy = wr.top + wr.height / 2;
   const p = contentPoint(cx, cy);
-  anchorAt(p.u, p.v, cx, cy, clamp(view.scale * factor, 1, 9));
+  anchorAt(p.u, p.v, cx, cy, clamp(view.scale * f, 1, 9));
 }
 
-// oyuncunun başkentine odaklan (dar ekranda başlangıç görünümü)
-function focusCapital() {
+function focusHome() {
   const me = sim.nations[sim.playerId];
   if (!me) return;
-  const cap = sim.world.cities[me.capital];
   const wr = wrapBox();
-  anchorAt(cap.x / W, cap.y / H, wr.left + wr.width / 2, wr.top + wr.height / 2,
-    isNarrow() ? 3.4 : 1);
+  anchorAt(me.cx / W, me.cy / H, wr.left + wr.width / 2, wr.top + wr.height / 2,
+    isNarrow() ? 3.2 : 1.6);
 }
 
 window.addEventListener('resize', fitStage);
-$('zoom-in').onclick = () => zoomBy(1.45);
-$('zoom-out').onclick = () => zoomBy(1 / 1.45);
-$('zoom-fit').onclick = () => { view.scale = 1; applyView(); };
+$('zoom-in').onclick = () => { sfx.ui(); zoomBy(1.45); };
+$('zoom-out').onclick = () => { sfx.ui(); zoomBy(1 / 1.45); };
+$('zoom-fit').onclick = () => { sfx.ui(); view.scale = 1; applyView(); };
 
 mapCanvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -140,93 +130,36 @@ mapCanvas.addEventListener('wheel', e => {
 
 function cellFromPoint(sx, sy) {
   const r = mapCanvas.getBoundingClientRect();
-  const x = (sx - r.left) / r.width * W;
-  const y = (sy - r.top) / r.height * H;
-  return { x, y, cx: clamp(x | 0, 0, W - 1), cy: clamp(y | 0, 0, H - 1) };
+  const x = clamp(((sx - r.left) / r.width * W) | 0, 0, W - 1);
+  const y = clamp(((sy - r.top) / r.height * H) | 0, 0, H - 1);
+  return idx(x, y);
 }
 
-// ------------------------------------------------------------------ sürükleme
+// ------------------------------------------------------------------ girdi
 
-// Sürükleme çizgisi üzerindeki hücreleri örnekleyip savaş uyarısı üret.
-function dragWarning(d) {
-  const me = sim.nations[sim.playerId];
-  const foes = new Set();
-  const len = Math.hypot(d.x1 - d.x0, d.y1 - d.y0);
-  const steps = clamp(len | 0, 1, 120);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const x = clamp((d.x0 + (d.x1 - d.x0) * t) | 0, 0, W - 1);
-    const y = clamp((d.y0 + (d.y1 - d.y0) * t) | 0, 0, H - 1);
-    const c = idx(x, y);
-    if (!sim.world.isLand[c]) continue;
-    const o = sim.owner[c];
-    if (o < 0 || o === me.id) continue;
-    const n = sim.nations[o];
-    if (allied(me, n)) continue;
-    if (truced(sim, me, n)) { foes.add(`⛔ ${n.name} ile ateşkes`); continue; }
-    if (!atWar(me, n)) foes.add(`⚠ ${n.name}'a savaş ilanı`);
-  }
-  return [...foes].slice(0, 2).join('  ·  ');
-}
-
-// Tek işaretçi (fare ya da tek parmak):
-//   kendi toprağından başlarsa → ordu fırlatma
-//   başka yerden başlarsa      → haritayı kaydırma
-// İki parmak: her zaman yakınlaştırma + kaydırma.
-
+// Tek parmak/fare: kendi toprağın dışına dokunmak saldırıdır.
+// Kaydırma için parmağı sürüklemen yeterli — dokunup çekmek haritayı gezdirir.
 const ptrs = new Map();
-let pan = null, pinch = null;
-
-function startLaunch(sx, sy) {
-  const me = sim.nations[sim.playerId];
-  const p = cellFromPoint(sx, sy);
-  const c = idx(p.cx, p.cy);
-  ui.selected = c;
-  refreshRegion();
-  if (sim.owner[c] !== me.id) return false;
-  if (locked(sim, me)) {
-    flashHint(`İhanet cezası sürüyor — ${Math.ceil(me.lockUntil - sim.realT)} sn saldıramazsın`);
-    return false;
-  }
-  ui.drag = { active: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y, troops: 0, warn: '', blocked: false };
-  return true;
-}
-
-function endLaunch() {
-  const d = ui.drag;
-  ui.drag = null;
-  if (!d || !d.active) return;
-  const me = sim.nations[sim.playerId];
-  const dx = d.x1 - d.x0, dy = d.y1 - d.y0;
-  const len = Math.hypot(dx, dy);
-  if (len < 2.5) return;                        // kazara dokunuş
-  const troops = me.pool * ui.pct;
-  if (troops < 20) { flashHint('Yeterli asker yok'); return; }
-  if (launchArmy(sim, me, d.x0, d.y0, dx, dy, troops, len)) refreshTop();
-}
-
-function beginPinch() {
-  ui.drag = null; pan = null;
-  const [a, b] = [...ptrs.values()];
-  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  pinch = {
-    dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-    scale: view.scale,
-    ...contentPoint(mx, my),
-  };
-}
+let pan = null, pinch = null, pressed = null;
+const TAP_SLOP = 9;      // bu kadar pikselden az hareket = dokunma, fazlası = kaydırma
 
 mapCanvas.addEventListener('pointerdown', e => {
   if (!ui.started || sim.over) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
+  sfx.init(); sfx.resume();
   mapCanvas.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-  if (ptrs.size === 2) { beginPinch(); return; }
+  if (ptrs.size === 2) {
+    pressed = null; pan = null;
+    const [a, b] = [...ptrs.values()];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: view.scale, ...contentPoint(mx, my) };
+    return;
+  }
   if (ptrs.size > 2) return;
-
-  if (!startLaunch(e.clientX, e.clientY))
-    pan = { sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty };
+  pressed = { sx: e.clientX, sy: e.clientY, moved: 0 };
+  pan = { sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty };
 });
 
 mapCanvas.addEventListener('pointermove', e => {
@@ -240,50 +173,125 @@ mapCanvas.addEventListener('pointermove', e => {
     anchorAt(pinch.u, pinch.v, mx, my, clamp(pinch.scale * (d / pinch.dist), 1, 9));
     return;
   }
-  if (pan) {
+  if (pressed) {
+    pressed.moved = Math.max(pressed.moved,
+      Math.hypot(e.clientX - pressed.sx, e.clientY - pressed.sy));
+  }
+  if (pan && pressed && pressed.moved > TAP_SLOP) {
     view.tx = pan.tx + (e.clientX - pan.sx);
     view.ty = pan.ty + (e.clientY - pan.sy);
     applyView();
     return;
   }
-  const d = ui.drag;
-  if (!d || !d.active) return;
-  const p = cellFromPoint(e.clientX, e.clientY);
-  d.x1 = p.x; d.y1 = p.y;
-  d.troops = sim.nations[sim.playerId].pool * ui.pct;
-  d.warn = dragWarning(d);
-  d.blocked = d.warn.startsWith('⛔');
+  // fareyle gezinirken hedefi vurgula
+  if (e.pointerType === 'mouse' && !pan) updateHover(e.clientX, e.clientY);
 });
 
 function endPointer(e) {
   ptrs.delete(e.pointerId);
   if (pinch) { if (ptrs.size < 2) pinch = null; return; }
-  if (pan) { pan = null; return; }
-  endLaunch();
+  const p = pressed; pressed = null; pan = null;
+  if (!p || p.moved > TAP_SLOP) return;      // kaydırmaydı, dokunma değil
+  tapAttack(e.clientX, e.clientY);
 }
 mapCanvas.addEventListener('pointerup', endPointer);
-mapCanvas.addEventListener('pointercancel', endPointer);
+mapCanvas.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pressed = null; pan = null; });
 
-function flashHint(text) {
+mapCanvas.addEventListener('pointerleave', () => {
+  ui.hoverCell = -1; ui.hoverOwner = undefined; hideChip();
+});
+
+function updateHover(sx, sy) {
+  const c = cellFromPoint(sx, sy);
+  const o = sim.world.isLand[c] ? sim.owner[c] : undefined;
+  if (c === ui.hoverCell && o === ui.hoverOwner) return;
+  ui.hoverCell = c;
+  ui.hoverOwner = o;
+  sim.dirty = true;                          // vurgulama taban katmanında
+  showChip(sx, sy, o);
+}
+
+function showChip(sx, sy, o) {
+  const chip = $('target-chip');
+  const me = sim.nations[sim.playerId];
+  if (o === undefined || o === me.id) { hideChip(); return; }
+  const cost = attackCost(sim, o);
+  const troops = me.pool * ui.pct;
+  const cells = Math.floor(troops / cost);
+  const ad = o < 0 ? 'Boş toprak' : sim.nations[o].name;
+  let uyari = '';
+  if (o >= 0 && allied(me, sim.nations[o])) uyari = '<i>müttefikin</i>';
+  else if (locked(sim, me)) uyari = '<i>ihanet cezan sürüyor</i>';
+  chip.innerHTML = `<b>${ad}</b>` +
+    (uyari ? ` — ${uyari}` : ` · ${fmt(cells)} birim toprak alabilirsin`);
+  chip.classList.remove('hidden');
+  const r = wrap.getBoundingClientRect();
+  chip.style.left = clamp(sx - r.left, 70, r.width - 70) + 'px';
+  chip.style.top = clamp(sy - r.top - 42, 6, r.height - 30) + 'px';
+}
+function hideChip() { $('target-chip').classList.add('hidden'); }
+
+function tapAttack(sx, sy) {
+  const me = sim.nations[sim.playerId];
+  const c = cellFromPoint(sx, sy);
+  if (!sim.world.isLand[c]) return;
+  const target = sim.owner[c];
+  const x = c % W, y = (c / W) | 0;
+
+  if (target === me.id) {
+    renderer.ripple(x, y, 'rgba(255,250,225,0.9)');
+    sfx.ui();
+    return;
+  }
+  if (locked(sim, me)) {
+    flash(`İhanet cezası — ${Math.ceil(me.lockUntil - sim.realT)} sn saldıramazsın`);
+    renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
+    sfx.betray();
+    return;
+  }
+  if (target >= 0 && allied(me, sim.nations[target])) {
+    flash(`${sim.nations[target].name} müttefikin — önce ittifakı bozmalısın`);
+    renderer.ripple(x, y, 'rgba(235,190,90,0.95)');
+    sfx.ui();
+    return;
+  }
+  const atk = startAttack(sim, me, target, me.pool * ui.pct);
+  if (!atk) {
+    flash(sim.attacks.some(a => a.from === me.id && a.target === target)
+      ? 'Bu cephe zaten açık' : 'Yeterli asker yok ya da sınırın değmiyor');
+    renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
+    return;
+  }
+  renderer.ripple(x, y, me.color);
+  sfx.attack();
+  ui.shake = Math.max(ui.shake, 5);
+  refreshTop(); refreshFronts();
+}
+
+function flash(text) {
   const el = $('hint-bar');
   el.textContent = text;
   el.classList.add('warn');
-  clearTimeout(flashHint._t);
-  flashHint._t = setTimeout(() => {
+  clearTimeout(flash._t);
+  flash._t = setTimeout(() => {
     el.classList.remove('warn');
-    el.innerHTML = 'Kendi toprağından <b>bas–sürükle–bırak</b>: ordu o yöne fırlar.';
-  }, 2600);
+    el.innerHTML = 'Saldırmak için düşman ya da boş toprağa <b>dokun</b>.';
+  }, 2400);
 }
 
 // ------------------------------------------------------------------ arayüz
 
-$('pct').addEventListener('input', e => { ui.pct = +e.target.value / 100; refreshPct(); });
+$('pct').addEventListener('input', e => {
+  ui.pct = +e.target.value / 100;
+  refreshPct();
+});
+$('pct').addEventListener('change', () => sfx.ui());
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
   $('pct-label').innerHTML =
-    `Ordunun <b>%${Math.round(ui.pct * 100)}</b>'i &nbsp;→&nbsp; <b>${fmt(me.pool * ui.pct)}</b> asker`;
+    `<b>%${Math.round(ui.pct * 100)}</b> &nbsp;→&nbsp; <b>${fmt(me.pool * ui.pct)}</b> asker`;
 }
 
 function refreshTop() {
@@ -291,109 +299,102 @@ function refreshTop() {
   const me = sim.nations[sim.playerId];
   $('tb-nation').textContent = me.name;
   $('tb-nation').style.color = me.color;
-  $('tb-gold').textContent = fmt(me.gold);
-  $('tb-troops').textContent = fmt(me.pool);
+  $('tb-troops').textContent = fmt(ui.shownTroops);
   $('tb-cap').textContent = fmt(troopCap(sim, me));
-  $('tb-land').textContent = (landFrac(sim, me) * 100).toFixed(1) + '%';
-  $('tb-date').textContent = dateLabel(sim);
+  $('tb-land').textContent = (ui.shownLand * 100).toFixed(1) + '%';
   const lockEl = $('tb-lock');
   if (locked(sim, me)) {
     lockEl.classList.remove('hidden');
-    lockEl.textContent = `⛔ İhanet cezası ${Math.ceil(me.lockUntil - sim.realT)}sn`;
+    lockEl.textContent = `⛔ ${Math.ceil(me.lockUntil - sim.realT)}sn`;
   } else lockEl.classList.add('hidden');
   refreshPct();
 }
 
-function refreshRegion() {
-  const el = $('region-info');
-  const c = ui.selected;
-  if (c < 0 || !sim.world.isLand[c]) {
-    el.innerHTML = '<span class="dim-i">İncelemek için bir bölge seç.</span>';
-    return;
-  }
-  const reg = sim.world.regions[sim.world.regionOf[c]];
-  const city = reg && reg.city != null ? sim.world.cities[reg.city] : null;
-  const o = sim.owner[c];
-  const holder = o >= 0 ? sim.nations[o] : null;
-  const ter = TERRAIN[sim.world.terrain[c]];
-  const rows = [
-    ['Sahip', holder
-      ? `<b style="color:${holder.color}">${holder.name}</b>`
-      : '<i>tarafsız</i>'],
-    ['Arazi', `${ter.ad} <span class="dim">(×${ter.cost.toFixed(2)} maliyet)</span>`],
-  ];
-  if (city) {
-    rows.push(['Şehir', `${city.name} <span class="dim">(${fmt(city.pop)} nüfus)</span>`]);
-    rows.push(['Kale', city.castle ? '▮'.repeat(city.castle) : '—']);
-  }
-  if (!holder && reg) rows.push(['Yerel direnç', `×${reg.def.toFixed(2)}`]);
-  el.innerHTML = rows.map(r => `<div class="row"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+function mkBtn(text, cls, fn, title) {
+  const b = document.createElement('button');
+  b.className = 'mini ' + cls;
+  b.textContent = text;
+  if (title) b.title = title;
+  b.onclick = ev => { sfx.init(); sfx.resume(); sfx.ui(); fn(ev); };
+  return b;
+}
 
-  // kendi şehrinse kale yükseltme
-  if (city && city.owner === sim.playerId && city.castle < 4) {
-    const me = sim.nations[sim.playerId];
-    const cost = (city.castle + 1) * 220;
-    const b = document.createElement('button');
-    b.className = 'act';
-    b.textContent = `🏰 Kaleyi güçlendir (${cost} altın)`;
-    b.disabled = me.gold < cost;
-    b.onclick = () => {
-      if (me.gold < cost) return;
-      me.gold -= cost; city.castle++;
-      sim.dirty = true;
-      log(sim, `🏰 ${city.name} kalesi ${city.castle}. kademeye çıktı`, 'build');
-      refreshRegion(); refreshTop();
-    };
-    el.appendChild(b);
+function refreshFronts() {
+  const me = sim.nations[sim.playerId];
+  const mine = sim.attacks.filter(a => a.from === me.id);
+  $('sec-fronts').classList.toggle('hidden', !mine.length);
+  const el = $('fronts');
+  el.innerHTML = '';
+  for (const a of mine) {
+    const ad = a.target < 0 ? 'Boş toprak' : sim.nations[a.target].name;
+    const row = document.createElement('div');
+    row.className = 'front';
+    const pct = clamp(a.troops / a.start, 0, 1);
+    row.innerHTML =
+      `<div class="front-top"><span>${ad}</span><b>${fmt(a.troops)}</b></div>` +
+      `<div class="bar"><i style="width:${pct * 100}%;background:${me.color}"></i></div>`;
+    row.appendChild(mkBtn('Geri çağır', 'bad', () => {
+      cancelAttack(sim, a); refreshFronts(); refreshTop();
+    }, 'Kalan asker garnizona döner'));
+    el.appendChild(row);
   }
 }
 
-function statusOf(me, n) {
-  if (n === me) return { t: 'sen', k: 'self' };
-  if (allied(me, n)) return { t: 'ittifak', k: 'ally' };
-  if (atWar(me, n)) return { t: 'savaş', k: 'war' };
-  if (truced(sim, me, n)) return { t: 'ateşkes', k: 'truce' };
-  return { t: 'barış', k: 'peace' };
+function refreshOffers() {
+  const me = sim.nations[sim.playerId];
+  const el = $('offers');
+  el.innerHTML = '';
+  let any = false;
+  for (const id of sim.playerOffers) {
+    const n = sim.nations[id];
+    if (!n.alive || allied(me, n)) { sim.playerOffers.delete(id); continue; }
+    any = true;
+    const box = document.createElement('div');
+    box.className = 'msg';
+    box.innerHTML = `<div><b>${n.name}</b> ittifak teklif ediyor.</div>`;
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    acts.appendChild(mkBtn('Kabul', 'good', () => {
+      formAlliance(sim, me, n); sim.playerOffers.delete(id);
+      sfx.ally(); refreshOffers(); refreshDiplo();
+    }));
+    acts.appendChild(mkBtn('Reddet', 'bad', () => {
+      sim.playerOffers.delete(id); refreshOffers();
+    }));
+    box.appendChild(acts);
+    el.appendChild(box);
+  }
+  $('sec-offers').classList.toggle('hidden', !any);
 }
 
 function refreshDiplo() {
   const el = $('diplo');
   const me = sim.nations[sim.playerId];
-  const list = sim.nations.filter(n => n.alive)
-    .sort((a, b) => b.cells - a.cells);
+  const list = sim.nations.filter(n => n.alive).sort((a, b) => b.cells - a.cells);
   el.innerHTML = '';
   for (const n of list) {
-    const st = statusOf(me, n);
     const row = document.createElement('div');
-    row.className = 'nat-row ' + st.k;
-    const frac = (landFrac(sim, n) * 100).toFixed(1);
+    const self = n === me;
+    const ally = !self && allied(me, n);
+    row.className = 'nat-row' + (self ? ' self' : ally ? ' ally' : '');
     row.innerHTML =
       `<span class="sw" style="background:${n.color}"></span>` +
       `<span class="nm">${n.name}</span>` +
-      `<span class="pc">${frac}%</span>` +
-      `<span class="st">${st.t}</span>`;
-    if (n !== me) {
+      `<span class="pc">${(landFrac(sim, n) * 100).toFixed(1)}%</span>` +
+      `<span class="st">${self ? 'sen' : ally ? 'ittifak' : 'yoğunluk ' + density(n).toFixed(1)}</span>`;
+    if (!self) {
       const acts = document.createElement('div');
       acts.className = 'acts';
-      if (allied(me, n)) {
+      if (ally) {
         acts.appendChild(mkBtn('İttifakı boz', 'bad', () => {
           breakAlliance(sim, me, n);
-          refreshDiplo(); refreshTop();
+          sfx.betray(); ui.shake = Math.max(ui.shake, 7);
+          refreshDiplo(); refreshTop(); refreshFronts();
         }, `${BETRAY_LOCK} saniye hiçbir yere saldıramazsın`));
-      } else if (atWar(me, n)) {
-        acts.appendChild(mkBtn('Barış teklif et', 'good', () => {
-          if (power(sim, n) < power(sim, me) * 0.85 || sim.rnd() < 0.3) makePeace(sim, me, n);
-          else log(sim, `❌ ${n.name} barış teklifini reddetti`, 'info');
-          refreshDiplo();
-        }));
       } else {
-        if (!truced(sim, me, n))
-          acts.appendChild(mkBtn('Savaş ilan et', 'bad', () => {
-            declareWar(sim, me, n); refreshDiplo();
-          }));
         acts.appendChild(mkBtn('İttifak teklif et', '', () => {
-          const ok = power(sim, me) < power(sim, n) * 2.2 && landFrac(sim, me) < 0.34;
-          if (ok && formAlliance(sim, me, n)) log(sim, `🤝 ${n.name} teklifini kabul etti`, 'ally');
+          const ok = power(sim, me) < power(sim, n) * 2 && landFrac(sim, me) < 0.35;
+          if (ok && formAlliance(sim, me, n)) sfx.ally();
           else log(sim, `❌ ${n.name} ittifakı reddetti — fazla güçlüsün`, 'info');
           refreshDiplo();
         }));
@@ -404,110 +405,58 @@ function refreshDiplo() {
   }
 }
 
-function mkBtn(text, cls, fn, title) {
-  const b = document.createElement('button');
-  b.className = 'mini ' + cls;
-  b.textContent = text;
-  if (title) b.title = title;
-  b.onclick = fn;
-  return b;
-}
-
-function refreshInbox() {
-  const el = $('inbox');
-  const me = sim.nations[sim.playerId];
-  el.innerHTML = '';
-  let any = false;
-
-  // savaşa çağrılar
-  for (const call of sim.pendingCalls.filter(c => c.target === sim.playerId)) {
-    any = true;
-    const caller = sim.nations[call.caller], foe = sim.nations[call.foe];
-    const box = document.createElement('div');
-    box.className = 'msg call';
-    box.innerHTML = `<div><b>${caller.name}</b> seni <b>${foe.name}</b>'a karşı savaşa çağırıyor.</div>`;
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    acts.appendChild(mkBtn('Katıl', 'good', () => {
-      answerCall(sim, call, true);
-      sim.pendingCalls.splice(sim.pendingCalls.indexOf(call), 1);
-      refreshInbox(); refreshDiplo();
-    }));
-    acts.appendChild(mkBtn('Reddet', 'bad', () => {
-      answerCall(sim, call, false);
-      sim.pendingCalls.splice(sim.pendingCalls.indexOf(call), 1);
-      refreshInbox(); refreshDiplo(); refreshTop();
-    }, `İttifak bozulur — ${BETRAY_LOCK} saniye saldırı yasağı`));
-    box.appendChild(acts);
-    el.appendChild(box);
-  }
-
-  // barış teklifleri
-  for (const id of sim.playerOffers.peace) {
-    const n = sim.nations[id];
-    if (!n.alive || !atWar(me, n)) { sim.playerOffers.peace.delete(id); continue; }
-    any = true;
-    const box = document.createElement('div');
-    box.className = 'msg';
-    box.innerHTML = `<div><b>${n.name}</b> barış istiyor.</div>`;
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    acts.appendChild(mkBtn('Kabul', 'good', () => {
-      makePeace(sim, me, n); sim.playerOffers.peace.delete(id);
-      refreshInbox(); refreshDiplo();
-    }));
-    acts.appendChild(mkBtn('Reddet', 'bad', () => {
-      sim.playerOffers.peace.delete(id); refreshInbox();
-    }));
-    box.appendChild(acts);
-    el.appendChild(box);
-  }
-
-  // ittifak teklifleri
-  for (const id of sim.playerOffers.ally) {
-    const n = sim.nations[id];
-    if (!n.alive || allied(me, n) || atWar(me, n)) { sim.playerOffers.ally.delete(id); continue; }
-    any = true;
-    const box = document.createElement('div');
-    box.className = 'msg';
-    box.innerHTML = `<div><b>${n.name}</b> ittifak teklif ediyor.</div>`;
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    acts.appendChild(mkBtn('Kabul', 'good', () => {
-      formAlliance(sim, me, n); sim.playerOffers.ally.delete(id);
-      refreshInbox(); refreshDiplo();
-    }));
-    acts.appendChild(mkBtn('Reddet', 'bad', () => {
-      sim.playerOffers.ally.delete(id); refreshInbox();
-    }));
-    box.appendChild(acts);
-    el.appendChild(box);
-  }
-
-  $('sec-inbox').classList.toggle('hidden', !any);
-}
-
 function refreshLog() {
   if (sim.events.length === ui.lastLogLen) return;
   ui.lastLogLen = sim.events.length;
-  const last = sim.events.slice(isNarrow() ? -4 : -7);
+  const last = sim.events.slice(isNarrow() ? -4 : -6);
   $('log').innerHTML = last
-    .map((e, i) => `<div class="ev ${e.tip} ${i < last.length - 3 ? 'old' : ''}">${e.metin}</div>`)
+    .map((e, i) => `<div class="ev ${e.tip} ${i < last.length - 2 ? 'old' : ''}">${e.metin}</div>`)
     .join('');
+}
+
+// sim'in ürettiği anlık olayları ses ve efekte çevir
+function drainFx() {
+  for (const f of sim.fx) {
+    if (f.tip === 'death') {
+      renderer.burst(f.x, f.y, sim.nations[f.nat].color);
+      sfx.death();
+      ui.shake = Math.max(ui.shake, 9);
+    } else if (f.tip === 'betray' && f.nat !== sim.playerId) {
+      sfx.betray();
+    }
+  }
+  sim.fx.length = 0;
 }
 
 // hız
 function setSpeed(v, btn) {
   ui.speed = v;
-  document.querySelectorAll('.spd').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.spd').forEach(b => {
+    if (b.id !== 'btn-sound') b.classList.remove('active');
+  });
   btn.classList.add('active');
+  sfx.init(); sfx.resume(); sfx.ui();
 }
 $('btn-pause').onclick = e => setSpeed(0, e.currentTarget);
 $('btn-play').onclick = e => setSpeed(1, e.currentTarget);
 $('btn-fast').onclick = e => setSpeed(3, e.currentTarget);
+$('btn-sound').onclick = e => {
+  sfx.init(); sfx.resume();
+  sfx.on = !sfx.on;
+  e.currentTarget.classList.toggle('off', !sfx.on);
+  e.currentTarget.textContent = sfx.on ? '♪' : '♪̸';
+  if (sfx.on) sfx.ui();
+};
 window.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); (ui.speed ? $('btn-pause') : $('btn-play')).click(); }
 });
+
+const drawer = $('drawer');
+drawer.onclick = () => {
+  sfx.init(); sfx.resume(); sfx.ui();
+  const open = $('panel').classList.toggle('open');
+  drawer.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
 
 // ------------------------------------------------------------------ başlangıç
 
@@ -524,31 +473,17 @@ function buildStart() {
 }
 
 function start(id) {
+  sfx.init(); sfx.resume(); sfx.ui();
   sim.playerId = id;
   sim.nations[id].ai = false;
+  ui.lastCells = sim.nations[id].cells;
+  ui.shownTroops = sim.nations[id].pool;
+  ui.shownLand = landFrac(sim, sim.nations[id]);
   $('start-screen').classList.add('hidden');
   ui.started = true;
   log(sim, `👑 ${sim.nations[id].name} tahtına oturdun`, 'info');
-  fitStage();
-  focusCapital();
-  refreshTop(); refreshDiplo(); refreshInbox();
-  if (isNarrow())
-    flashHint('Kendi toprağından sürükle · boş yerden kaydır · iki parmakla yakınlaştır');
-}
-
-// dar ekranda yan panel alttan açılan çekmeceye dönüşür
-const drawer = $('drawer');
-drawer.onclick = () => {
-  const open = $('panel').classList.toggle('open');
-  drawer.setAttribute('aria-expanded', open ? 'true' : 'false');
-};
-
-function refreshDrawer() {
-  const n = sim.pendingCalls.filter(c => c.target === sim.playerId).length
-    + sim.playerOffers.peace.size + sim.playerOffers.ally.size;
-  $('drawer-label').innerHTML = n
-    ? `Krallıklar ve Divan <span class="badge">${n}</span>`
-    : 'Krallıklar ve Divan';
+  fitStage(); focusHome();
+  refreshTop(); refreshDiplo(); refreshOffers(); refreshFronts();
 }
 
 function showEnd() {
@@ -558,8 +493,9 @@ function showEnd() {
   const me = sim.nations[sim.playerId];
   $('end-title').textContent = sim.won ? '👑 Zafer' : '💀 Yenilgi';
   $('end-desc').textContent = sim.won
-    ? `${me.name} kıtanın %${Math.round(WIN_FRAC * 100)}'inden fazlasına hükmediyor. Çağ senin adınla anılacak.`
-    : `${me.name} haritadan silindi. Taht boş kalmaz — bir hanedan düşer, bir başkası yükselir.`;
+    ? `${me.name} kıtanın %${Math.round(WIN_FRAC * 100)}'ından fazlasına hükmediyor.`
+    : `${me.name} haritadan silindi.`;
+  sim.won ? sfx.win() : sfx.lose();
 }
 
 // ------------------------------------------------------------------ döngü
@@ -568,33 +504,49 @@ let last = performance.now();
 let uiTimer = 0, diploTimer = 0;
 
 function frame(now) {
-  const realDt = Math.min(0.08, (now - last) / 1000);
+  const realDt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ui.now = now;
 
   if (ui.started && !sim.over) {
     step(sim, realDt * ui.speed, realDt);
-    uiTimer += realDt;
-    diploTimer += realDt;
-    if (uiTimer > 0.2) {
-      uiTimer = 0;
-      refreshTop(); refreshLog(); refreshInbox(); refreshRegion(); refreshDrawer();
+    drainFx();
+
+    const me = sim.nations[sim.playerId];
+    // toprak kazandıkça yükselen tık sesi
+    if (me.cells > ui.lastCells) {
+      ui.streak += me.cells - ui.lastCells;
+      sfx.capture(ui.streak, now);
+    } else if (ui.streak) ui.streak = Math.max(0, ui.streak - 1);
+    ui.lastCells = me.cells;
+
+    // sayaçlar sıçramaz, akar
+    const k = 1 - Math.pow(0.001, realDt);
+    ui.shownTroops += (me.pool - ui.shownTroops) * k;
+    ui.shownLand += (landFrac(sim, me) - ui.shownLand) * k;
+
+    uiTimer += realDt; diploTimer += realDt;
+    if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); }
+    if (diploTimer > 0.5) {
+      diploTimer = 0;
+      refreshDiplo(); refreshOffers(); refreshFronts();
     }
-    if (diploTimer > 1.0) { diploTimer = 0; refreshDiplo(); }
   }
   if (sim.over) showEnd();
 
-  // harita yalnız sahiplik değiştiğinde yeniden boyanır
-  if (sim.dirty || !frame.painted) { sim.dirty = false; frame.painted = true; renderer.renderMap(); }
-  renderer.renderFx(ui);
+  if (ui.shake > 0.05) { ui.shake *= Math.pow(0.02, realDt); applyView(); }
+  else if (ui.shake) { ui.shake = 0; applyView(); }
+
+  // saldırı sürerken harita her karede yeniden boyanır (parlama animasyonu)
+  if (sim.dirty || sim.attacks.length) { sim.dirty = false; renderer.renderMap(ui.hoverOwner); }
+  renderer.renderFx(ui, realDt);
 
   requestAnimationFrame(frame);
 }
 
-// hata ayıklama / otomatik test tutamağı
 window.__rb = {
-  sim, ui, view, W, H, S, focusCapital, fitStage,
-  api: { launchArmy, declareWar, makePeace, formAlliance, breakAlliance, answerCall, power },
+  sim, ui, view, W, H, S, focusHome, fitStage, sfx,
+  api: { startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance, power },
 };
 
 buildStart();
