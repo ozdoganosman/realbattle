@@ -175,6 +175,13 @@ const target = await page.evaluate(() => {
 });
 check('ekranda dokunulabilir hedef var', !!target);
 
+// En küçük hamle tek halkaya yuvarlanıp aynı karede biter; süren bir cephe
+// ölçmek için kaydıracı yukarı çek.
+await page.evaluate(async () => {
+  const p = document.getElementById('pct');
+  p.value = '85'; p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 40));
+});
 const before = await info();
 await tap({ x: target.sx, y: target.sy });
 await page.waitForTimeout(250);

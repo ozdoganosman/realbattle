@@ -348,6 +348,33 @@ await page.evaluate(() => { window.__rb.ui.speed = 1; });
 
 // ---------------------------------------------------------------- his
 console.log('\nHissiyat katmanı');
+// Asker sayısı ulus renginin üstüne doğrudan yazılınca okunmuyordu (koyu
+// yeşil/mor/turuncu zeminlerde kayboluyordu). Artık parşömen bir hapın
+// üstüne basılıyor — hem hap hem mürekkep piksel olarak aranıyor.
+check('haritada asker sayısı okunaklı basılıyor', await page.evaluate(() => {
+  const { sim, S } = window.__rb;
+  const cv = document.getElementById('map');
+  const ctx = cv.getContext('2d');
+  const olcek = cv.width / (window.__rb.W * S);
+  for (const nat of sim.nations) {
+    if (!nat.alive || nat.cells < 45) continue;
+    const size = Math.max(11, Math.min(30, Math.sqrt(nat.cells) * 0.5));
+    const cx = nat.cx * S * olcek, cy = (nat.cy * S + size * 0.86) * olcek;
+    const w = Math.round(70 * olcek), h = Math.round(size * 1.4 * olcek);
+    if (cx - w / 2 < 0 || cy - h / 2 < 0 || cx + w / 2 > cv.width || cy + h / 2 > cv.height) continue;
+    const d = ctx.getImageData(cx - w / 2, cy - h / 2, w, h).data;
+    let parsomen = 0, murekkep = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (r > 235 && g > 228 && b > 205) parsomen++;
+      if (r < 90 && g < 70 && b < 60) murekkep++;
+    }
+    // hap yeterince geniş, sayının mürekkebi de içinde
+    if (parsomen > 40 && murekkep > 8) return true;
+  }
+  return false;
+}));
+
 check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));
 check('ses düğmesi sesi kapatıp açıyor', await page.evaluate(async () => {
   const b = document.getElementById('btn-sound');
