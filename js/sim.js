@@ -305,9 +305,15 @@ export function startAttack(sim, nat, targetId, troops) {
   const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  // En küçük hamle bir hücrenin küçük bir DİLİMİdir: bütçe cephenin bütün
-  // hücrelerine eşit dağıtıldığı için kaydıraç istendiği kadar ince dilinir.
-  if (troops < cost * 0.02) return null;
+  // Cephe HEP tek parça ilerler: hamle tam halkalara yuvarlanır. Yarım halka
+  // bırakmak sınırı tırtıklı, "nokta nokta" gösteriyordu — oysa halkanın ya
+  // tamamı düşmeli ya hiçbiri. Yuvarlama kendiliğinden borçlandırmaz.
+  const halka = border.length * cost;
+  const tavan = Math.max(nat.pool, troops);
+  let kacHalka = Math.max(1, Math.round(troops / halka));
+  while (kacHalka > 1 && kacHalka * halka > tavan) kacHalka--;
+  if (halka > tavan) return null;                 // bir halkaya bile yetmiyor
+  troops = kacHalka * halka;
 
   const layer = border;
   const inQ = new Set(layer);
@@ -378,56 +384,22 @@ function kill(sim, nat, dagil = false) {
   if (nat.id === sim.playerId) { sim.over = true; sim.won = false; }
 }
 
-// Bir kuşatma yayını uzamsal olarak sırala: bozdurma sırasında yan yana
-// hücreler arka arkaya alınsın, sınırda dağınık benek kalmasın.
-function siraya(hucreler) {
-  if (hucreler.length < 3) return hucreler;
-  const kalan = new Set(hucreler);
-  const out = [];
-  let c = hucreler[0];
-  while (kalan.size) {
-    if (c === undefined) c = kalan.values().next().value;
-    kalan.delete(c);
-    out.push(c);
-    const x = c % W, y = (c / W) | 0;
-    let sonraki;
-    for (let dy = -1; dy <= 1 && sonraki === undefined; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const n = ny * W + nx;
-        if (kalan.has(n)) { sonraki = n; break; }
-      }
-    }
-    c = sonraki;
-  }
-  return out;
-}
-
-// Sefer biterken yarım kalan kuşatma BOZDURULUR: biriken ilerlemenin toplamı
-// kadar bitişik hücre fiilen alınır, kalanı sıfırlanır. İki derdi birden
-// çözer — sürülen asker heba olmaz, ve haritada yarım boyalı "çizgi çizgi"
-// izler kalmaz. Kuşatma yalnız sefer sürerken görünür.
+// Sefer biterken yarım kalan kuşatma İADE edilir: hücreler el değiştirmez,
+// biriken ilerleme askere çevrilip garnizona döner. Böylece sınır ya bir
+// halka tam ilerler ya hiç — haritada yarım boyalı iz ya da tırtıklı, nokta
+// nokta bir cephe kalmaz. (Hamle zaten tam halkalara yuvarlandığı için bu
+// yol çoğunlukla yalnız son halkanın artığını toplar.)
 function bitirSaldiri(sim, a, i) {
   const nat = sim.nations[a.from];
   const sag = nat.alive;
+  const cost = attackCost(sim, a.target);
   let kredi = 0;
-  const bekleyen = [];
   for (const c of a.layer) {
     if (sim.progBy[c] !== a.from || sim.prog[c] <= 0) continue;
     kredi += sim.prog[c];
-    bekleyen.push(c);
+    sim.prog[c] = 0; sim.progBy[c] = -1;
   }
-  for (const c of siraya(bekleyen)) {
-    if (sag && kredi >= 1 && sim.owner[c] === a.target) {
-      kredi -= 1;
-      take(sim, c, nat);
-    } else {
-      sim.prog[c] = 0; sim.progBy[c] = -1;
-    }
-  }
-  if (sag && a.troops > 0) deposit(sim, nat, a.troops);
+  if (sag) deposit(sim, nat, Math.max(0, a.troops) + kredi * cost);
   sim.attacks.splice(i, 1);
   sim.dirty = true;
 }

@@ -92,12 +92,22 @@ t('tarafsız toprağa saldırı başlatılabilir', () => {
   assert.equal(s.attacks.length, 1);
 });
 
-t('saldırı havuzdan asker düşürür', () => {
+// Hamle TAM HALKAYA yuvarlanır (cephe hep tek parça ilerlesin diye), o yüzden
+// düşen miktar istenen değil, ona en yakın halka katıdır.
+t('saldırı havuzdan tam halka kadar asker düşürür', () => {
   const s = fresh();
   const nat = s.nations[0];
   const before = nat.pool;
-  startAttack(s, nat, -1, before * 0.5);
-  assert(Math.abs(nat.pool - before * 0.5) < 1e-6, `havuz ${nat.pool}, beklenen ${before * 0.5}`);
+  const halka = frontCost(s, nat, -1);
+  const a = startAttack(s, nat, -1, before * 0.5);
+  assert(a, 'saldırı başlamadı');
+  const dusen = before - nat.pool;
+  assert(Math.abs(dusen - a.start) < 1e-6, 'düşen miktar sefere sürülenle uyuşmuyor');
+  const kat = dusen / halka;
+  assert(Math.abs(kat - Math.round(kat)) < 1e-6,
+    `tam halka katı değil (${kat.toFixed(3)} halka)`);
+  assert(Math.abs(dusen - before * 0.5) <= halka,
+    `yuvarlama bir halkadan fazla saptı (${dusen.toFixed(0)} / ${(before * 0.5).toFixed(0)})`);
 });
 
 t('sınır dalgası toprak kazandırır', () => {
@@ -314,6 +324,23 @@ function sinirHucreleri(s, nat, target) {
   }
   return out;
 }
+
+t('en küçük hamle bütün sınırı bir hücre iter — yarım halka kalmaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const sinir = sinirHucreleri(s, nat, -1);
+  // kaydıraç çeyrek halka dese bile hamle tam halkaya yuvarlanır
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 0.25);
+  assert(a, 'saldırı başlamadı');
+  for (let i = 0; i < 300 && s.attacks.length; i++) step(s, 1 / 30, 1 / 30);
+  const alinmayan = sinir.filter(c => s.owner[c] !== nat.id).length;
+  assert.equal(alinmayan, 0,
+    `${alinmayan}/${sinir.length} sınır hücresi alınmadı — cephe tırtıklı kaldı`);
+  let iz = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) iz++;
+  assert.equal(iz, 0, `${iz} hücrede yarım kuşatma izi kalmış`);
+});
 
 t('küçük hamle bütün sınırı eşit ilerletir', () => {
   const g = genisSinirliSim();
@@ -788,8 +815,8 @@ t('borç kapanınca normal faize dönülür', () => {
   const s = fresh();
   for (const n of s.nations) n.ai = false;
   const nat = s.nations[0];
-  startAttack(s, nat, -1, nat.pool + maxDebt(s, nat) * 0.35);
-  assert(inDebt(nat));
+  startAttack(s, nat, -1, maxCommit(s, nat));   // bilerek borca gir
+  assert(inDebt(nat), `borca girilmedi: ${nat.pool.toFixed(0)}`);
   for (let i = 0; i < 4000 && inDebt(nat); i++) step(s, 0.05, 0.05);
   assert(!inDebt(nat), `borç kapanmadı: ${nat.pool.toFixed(0)}`);
   const once = nat.pool;

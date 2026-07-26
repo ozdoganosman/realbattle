@@ -274,8 +274,9 @@ function tapAttack(sx, sy) {
     let mesaj;
     if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
       mesaj = 'Bu cephe zaten açık';
-    } else if (commitOf(me) < attackCost(sim, target) * 0.02) {
-      mesaj = 'Bu kadar az askerle cephe kıpırdamaz — saldırı gücünü yükselt';
+    } else if (frontCost(sim, me, target) > 0) {
+      mesaj = `Bu cepheyi bir hücre itmek ${fmt(frontCost(sim, me, target))} asker `
+            + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan';
     } else {
       mesaj = 'Sınırın buraya değmiyor';
     }
@@ -343,31 +344,35 @@ function frontMap() {
   return cepheler;
 }
 
-// Bir hedefe dokunulunca fiilen sürülecek asker. En küçük hamle tek hücre
-// olduğundan kaydıraç ne diyorsa o gider — arayüz artık yuvarlamıyor.
+// Bir hedefe dokunulunca fiilen sürülecek asker — sim'deki halka yuvarlamasının
+// aynısı. Arayüzün yazdığı sayı ile giden sayı ayrışmasın diye tek yerde.
+function halkaYuvarla(me, halka, istenen) {
+  if (!halka) return istenen;
+  const tavan = Math.max(me.pool, istenen);
+  if (halka > tavan) return 0;                 // bir halkaya bile yetmiyor
+  let n = Math.max(1, Math.round(istenen / halka));
+  while (n > 1 && n * halka > tavan) n--;
+  return n * halka;
+}
 function gidecek(me, target) {
-  const istenen = commitOf(me);
-  return istenen >= attackCost(sim, target) * 0.02 ? istenen : 0;
+  return halkaYuvarla(me, frontMap().get(target), commitOf(me));
 }
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
-  const troops = commitOf(me);
-  const elde = Math.max(0, me.pool);
-  const borc = Math.max(0, troops - elde);
-  // En ucuz komşu cephenin kaçta kaçını itebileceğin: kaydıracın etkisi
-  // "kaç asker"den çok "sınırın ne kadarı" olarak okunuyor.
+  const istenen = commitOf(me);
+  // En ucuz komşu cephe: dokunulacak yer belli değilken hesap buna göre.
   let enUcuz = Infinity;
   for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
-  let pay = '';
-  if (enUcuz < Infinity && enUcuz > 0) {
-    const k = troops / enUcuz;
-    pay = k >= 1 ? ` <span class="floor">· sınırı ${k.toFixed(1)} hücre iter</span>`
-                 : ` <span class="floor">· sınırı %${Math.round(k * 100)} kuşatır</span>`;
-  }
+  const halka = enUcuz < Infinity ? enUcuz : 0;
+  const troops = halka ? halkaYuvarla(me, halka, istenen) : istenen;
+  const elde = Math.max(0, me.pool);
+  const borc = Math.max(0, troops - elde);
+  const kat = halka ? Math.round(troops / halka) : 0;
   $('pct-label').innerHTML =
-    `<b>${fmt(troops)}</b> asker` + pay +
+    `<b>${fmt(troops)}</b> asker` +
+    (kat ? ` <span class="floor">· sınırı ${kat} hücre iter</span>` : '') +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
   // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
   // hazineyle kayan bir eşik oynarken kestirilemez.

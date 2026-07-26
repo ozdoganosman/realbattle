@@ -552,7 +552,7 @@ button.mini.bad:hover { background: #cc543b; }
       <h1>RealBattle</h1>
       <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
       <div class="rules">
-        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — o hedefle olan <b>bütün sınır hattın</b> aynı anda ve eşit ilerler. Az asker sürersen sınır boydan boya senin rengine doğru kayar; sefer bitince biriken kuşatma toprağa çevrilir.</div>
+        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — o hedefle olan <b>bütün sınır hattın</b> aynı anda ve eşit ilerler. Sefer sürerken bütün cephe senin rengine doğru kayar, halka dolunca hep birlikte düşer. Hamle tam halkalara yuvarlanır: sınır ya baştan sona ilerler ya hiç.</div>
         <div><b>Asker bileşik büyür.</b> Mevcut askerin faiz getirir, toprağın ayrıca gelir. Biriktikçe hızlanır.</div>
         <div><b>Seri seri bas.</b> Kaydıraç alt uçta yatıktır — küçük hamleler ucuzdur. Borç yalnız <b>kırmızı bölgede</b> başlar; oraya çekersen hazinenden fazlasını sürersin ve borç kapanana kadar yeni sefer yok.</div>
         <div><b>Dolu hazine kaledir.</b> Bedel savunanın asker yoğunluğuyla <b>üstel</b> artar — dolu bir düşmanın hücresi boşunkinin 13 katına gelir. Çarpışmada iki taraf da erir ama saldıran daha çok verir; kale ancak kanata kanata çöker.</div>
@@ -1115,9 +1115,15 @@ function startAttack(sim, nat, targetId, troops) {
   const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  // En küçük hamle bir hücrenin küçük bir DİLİMİdir: bütçe cephenin bütün
-  // hücrelerine eşit dağıtıldığı için kaydıraç istendiği kadar ince dilinir.
-  if (troops < cost * 0.02) return null;
+  // Cephe HEP tek parça ilerler: hamle tam halkalara yuvarlanır. Yarım halka
+  // bırakmak sınırı tırtıklı, "nokta nokta" gösteriyordu — oysa halkanın ya
+  // tamamı düşmeli ya hiçbiri. Yuvarlama kendiliğinden borçlandırmaz.
+  const halka = border.length * cost;
+  const tavan = Math.max(nat.pool, troops);
+  let kacHalka = Math.max(1, Math.round(troops / halka));
+  while (kacHalka > 1 && kacHalka * halka > tavan) kacHalka--;
+  if (halka > tavan) return null;                 // bir halkaya bile yetmiyor
+  troops = kacHalka * halka;
 
   const layer = border;
   const inQ = new Set(layer);
@@ -1188,56 +1194,22 @@ function kill(sim, nat, dagil = false) {
   if (nat.id === sim.playerId) { sim.over = true; sim.won = false; }
 }
 
-// Bir kuşatma yayını uzamsal olarak sırala: bozdurma sırasında yan yana
-// hücreler arka arkaya alınsın, sınırda dağınık benek kalmasın.
-function siraya(hucreler) {
-  if (hucreler.length < 3) return hucreler;
-  const kalan = new Set(hucreler);
-  const out = [];
-  let c = hucreler[0];
-  while (kalan.size) {
-    if (c === undefined) c = kalan.values().next().value;
-    kalan.delete(c);
-    out.push(c);
-    const x = c % W, y = (c / W) | 0;
-    let sonraki;
-    for (let dy = -1; dy <= 1 && sonraki === undefined; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const n = ny * W + nx;
-        if (kalan.has(n)) { sonraki = n; break; }
-      }
-    }
-    c = sonraki;
-  }
-  return out;
-}
-
-// Sefer biterken yarım kalan kuşatma BOZDURULUR: biriken ilerlemenin toplamı
-// kadar bitişik hücre fiilen alınır, kalanı sıfırlanır. İki derdi birden
-// çözer — sürülen asker heba olmaz, ve haritada yarım boyalı "çizgi çizgi"
-// izler kalmaz. Kuşatma yalnız sefer sürerken görünür.
+// Sefer biterken yarım kalan kuşatma İADE edilir: hücreler el değiştirmez,
+// biriken ilerleme askere çevrilip garnizona döner. Böylece sınır ya bir
+// halka tam ilerler ya hiç — haritada yarım boyalı iz ya da tırtıklı, nokta
+// nokta bir cephe kalmaz. (Hamle zaten tam halkalara yuvarlandığı için bu
+// yol çoğunlukla yalnız son halkanın artığını toplar.)
 function bitirSaldiri(sim, a, i) {
   const nat = sim.nations[a.from];
   const sag = nat.alive;
+  const cost = attackCost(sim, a.target);
   let kredi = 0;
-  const bekleyen = [];
   for (const c of a.layer) {
     if (sim.progBy[c] !== a.from || sim.prog[c] <= 0) continue;
     kredi += sim.prog[c];
-    bekleyen.push(c);
+    sim.prog[c] = 0; sim.progBy[c] = -1;
   }
-  for (const c of siraya(bekleyen)) {
-    if (sag && kredi >= 1 && sim.owner[c] === a.target) {
-      kredi -= 1;
-      take(sim, c, nat);
-    } else {
-      sim.prog[c] = 0; sim.progBy[c] = -1;
-    }
-  }
-  if (sag && a.troops > 0) deposit(sim, nat, a.troops);
+  if (sag) deposit(sim, nat, Math.max(0, a.troops) + kredi * cost);
   sim.attacks.splice(i, 1);
   sim.dirty = true;
 }
@@ -1939,8 +1911,9 @@ function tapAttack(sx, sy) {
     let mesaj;
     if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
       mesaj = 'Bu cephe zaten açık';
-    } else if (commitOf(me) < attackCost(sim, target) * 0.02) {
-      mesaj = 'Bu kadar az askerle cephe kıpırdamaz — saldırı gücünü yükselt';
+    } else if (frontCost(sim, me, target) > 0) {
+      mesaj = `Bu cepheyi bir hücre itmek ${fmt(frontCost(sim, me, target))} asker `
+            + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan';
     } else {
       mesaj = 'Sınırın buraya değmiyor';
     }
@@ -2008,31 +1981,35 @@ function frontMap() {
   return cepheler;
 }
 
-// Bir hedefe dokunulunca fiilen sürülecek asker. En küçük hamle tek hücre
-// olduğundan kaydıraç ne diyorsa o gider — arayüz artık yuvarlamıyor.
+// Bir hedefe dokunulunca fiilen sürülecek asker — sim'deki halka yuvarlamasının
+// aynısı. Arayüzün yazdığı sayı ile giden sayı ayrışmasın diye tek yerde.
+function halkaYuvarla(me, halka, istenen) {
+  if (!halka) return istenen;
+  const tavan = Math.max(me.pool, istenen);
+  if (halka > tavan) return 0;                 // bir halkaya bile yetmiyor
+  let n = Math.max(1, Math.round(istenen / halka));
+  while (n > 1 && n * halka > tavan) n--;
+  return n * halka;
+}
 function gidecek(me, target) {
-  const istenen = commitOf(me);
-  return istenen >= attackCost(sim, target) * 0.02 ? istenen : 0;
+  return halkaYuvarla(me, frontMap().get(target), commitOf(me));
 }
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
-  const troops = commitOf(me);
-  const elde = Math.max(0, me.pool);
-  const borc = Math.max(0, troops - elde);
-  // En ucuz komşu cephenin kaçta kaçını itebileceğin: kaydıracın etkisi
-  // "kaç asker"den çok "sınırın ne kadarı" olarak okunuyor.
+  const istenen = commitOf(me);
+  // En ucuz komşu cephe: dokunulacak yer belli değilken hesap buna göre.
   let enUcuz = Infinity;
   for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
-  let pay = '';
-  if (enUcuz < Infinity && enUcuz > 0) {
-    const k = troops / enUcuz;
-    pay = k >= 1 ? ` <span class="floor">· sınırı ${k.toFixed(1)} hücre iter</span>`
-                 : ` <span class="floor">· sınırı %${Math.round(k * 100)} kuşatır</span>`;
-  }
+  const halka = enUcuz < Infinity ? enUcuz : 0;
+  const troops = halka ? halkaYuvarla(me, halka, istenen) : istenen;
+  const elde = Math.max(0, me.pool);
+  const borc = Math.max(0, troops - elde);
+  const kat = halka ? Math.round(troops / halka) : 0;
   $('pct-label').innerHTML =
-    `<b>${fmt(troops)}</b> asker` + pay +
+    `<b>${fmt(troops)}</b> asker` +
+    (kat ? ` <span class="floor">· sınırı ${kat} hücre iter</span>` : '') +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
   // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
   // hazineyle kayan bir eşik oynarken kestirilemez.
