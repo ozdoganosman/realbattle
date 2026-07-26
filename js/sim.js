@@ -52,8 +52,11 @@ const INTEREST_MAX = 0.070 * SPEED;   // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
 // asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
 // bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
-const SOFT_MULT = 40 * TROOP_SCALE;   // yumuşak tavan = toprak × bu
-const HARD_MULT = 60 * TROOP_SCALE;   // sert tavan — faiz burada tam durur
+// Tavan 10 KATA çıkarıldı: hazine çok daha derin, bileşik faiz çok daha uzun
+// süre çalışıyor ve dolu bir hazineyle çok daha büyük hamleler yapılabiliyor.
+const CAP_BOOST = 10;
+const SOFT_MULT = 40 * CAP_BOOST * TROOP_SCALE;   // yumuşak tavan = toprak × bu
+const HARD_MULT = 60 * CAP_BOOST * TROOP_SCALE;   // sert tavan — faiz burada tam durur
 const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
 const EARLY_SECS = 100;               // bu sürede 1'e iner
 const START_MULT = 18 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
@@ -61,7 +64,10 @@ const START_MULT = 18 * TROOP_SCALE;   // başlangıç askeri = toprak × bu
 // --- borçlanma ---
 // Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
 // önce borcu kapatır, borç da kendi faiziyle büyür — bedava kredi değil.
-const DEBT_MULT = 10 * TROOP_SCALE;   // en fazla borç = toprak × bu
+// En fazla borç = toprak × bu. Tavanla birlikte ölçekleniyor: yoksa hazine
+// 10 kat derinleşince borç bölgesi hazinenin binde biri kalır ve kaydıracın
+// kırmızı ucu hiçbir işe yaramazdı (eskiden sert tavanın ~%17'siydi).
+const DEBT_MULT = 10 * CAP_BOOST * TROOP_SCALE;
 const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — borçlanmak riskli
 
 // --- saldırı dengesi ---
@@ -69,11 +75,14 @@ const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — bor�
 // asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
 const NEUTRAL_COST = 25 * TROOP_SCALE / LAND_CHEAP;  // tarafsız hücrenin bedeli
 const BASE_COST = 14 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tabanı
-// Yoğunluk zaten asker ölçeğiyle küçüldüğü için burada yalnız ucuzlatma var.
-const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırlığı
 // Yoğunluk bedele ÜSTEL girer: kalabalık ordu doğrusal değil, hızlanarak
 // pahalanır — dolu bir hazinenin üstüne yürümek gerçekten kaledir.
 const DEF_EXP = 1.15;
+// Savunanın yoğunluk ağırlığı. Tavan CAP_BOOST kadar büyüyünce yoğunluk da
+// aynı oranda büyür, o yüzden katsayı CAP_BOOST^DEF_EXP ile bölünür: savunma
+// eğrisinin ŞEKLİ korunur (boş hazine 2.5, yumuşak tavan 21, sert tavan 32
+// asker/hücre). Bölünmeseydi dolu hazine 400 askere fırlar, harita kilitlenirdi.
+const DEF_K = 1.8 / LAND_CHEAP / Math.pow(CAP_BOOST, DEF_EXP);
 // Çarpışmada iki taraf da erir ama saldıran daha çok verir: savunan, hücrenin
 // bedelinin bu kadarını kaybeder (1'in altı = saldıran daha pahalıya alır).
 // Kanamak yoğunluğunu düşürür, düşen yoğunluk hücreyi ucuzlatır — yani baskı

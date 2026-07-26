@@ -180,8 +180,12 @@ t('bedel yoğunlukla üstel artar — kalabalık ordu kaledir', () => {
   const s = fresh();
   const n = s.nations[1];
   n.cells = 400;
+  // Yoğunluklar tavandan türetilir; sabit sayı yazmak tavan değişince testi
+  // anlamsız kılıyordu (10 kat büyüyen tavanda 17 artık "dolu" değil).
   const bedel = (d) => { n.pool = d * 400; return attackCost(s, 1); };
-  const bos = bedel(0), yari = bedel(8), dolu = bedel(17);
+  // dışbükeylik için EŞİT aralıklı örnekle: 0, tavanın yarısı, tavan
+  const sert = hardCap(s, n) / 400;
+  const bos = bedel(0), yari = bedel(sert / 2), dolu = bedel(sert);
   // ikinci yarıdaki artış birincidekinden BÜYÜK olmalı (dışbükey eğri)
   assert(dolu - yari > yari - bos,
     `eğri doğrusal/içbükey: ${bos.toFixed(1)} → ${yari.toFixed(1)} → ${dolu.toFixed(1)}`);
