@@ -5,6 +5,7 @@ import { W, H, S, idx, clamp } from './world.js';
 import {
   createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
   troopCap, power, landFrac, allied, locked, density,
+  softCap, hardCap, interestRate,
   startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, log,
 } from './sim.js';
@@ -307,7 +308,22 @@ function refreshTop() {
     lockEl.classList.remove('hidden');
     lockEl.textContent = `⛔ ${Math.ceil(me.lockUntil - sim.realT)}sn`;
   } else lockEl.classList.add('hidden');
+  refreshTreasury(me);
   refreshPct();
+}
+
+// Faiz bileşik çalışıyor ama görünmezse tekdüze hissediliyor — oranı,
+// geliri ve tavana ne kadar kaldığını açıkça göster.
+function refreshTreasury(me) {
+  const soft = softCap(sim, me), hard = hardCap(sim, me);
+  const r = interestRate(sim, me);
+  $('cap-fill').style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
+  $('cap-fill').style.background = me.color;
+  $('cap-soft').style.left = (soft / hard * 100) + '%';
+  $('econ-int').textContent = r > 0 ? `%${(r * 100).toFixed(2)} / tik` : 'durdu (tavan)';
+  $('econ-int').className = r > 0 ? '' : 'stalled';
+  $('econ-inc').textContent = `+${fmt(me.cells)} / 5.6sn`;
+  $('econ-soft').textContent = fmt(soft);
 }
 
 function mkBtn(text, cls, fn, title) {

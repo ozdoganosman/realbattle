@@ -149,6 +149,28 @@ body {
   color: var(--dim); margin-bottom: 8px;
 }
 
+/* hazine */
+.cap-bar {
+  position: relative; height: 10px; border-radius: 5px;
+  background: #d6c39c; overflow: hidden; margin-bottom: 9px;
+  box-shadow: inset 0 1px 3px rgba(90,70,35,.35);
+}
+.cap-bar i {
+  display: block; height: 100%; border-radius: 5px;
+  transition: width .25s var(--ease);
+}
+.cap-mark {
+  position: absolute; top: -2px; width: 2px; height: 14px;
+  background: #5c4726; opacity: .75;
+}
+.econ {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 2px 10px; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.econ span { color: var(--dim); }
+.econ b { font-weight: bold; }
+.econ b.stalled { color: var(--bad); }
+
 /* saldırı gücü kaydıracı */
 #pct {
   width: 100%; height: 30px;
@@ -343,6 +365,7 @@ button.mini.bad:hover { background: #cc543b; }
   #panel.open #drawer .grip { background: #8a6f4d; width: 30px; }
 
   .sec { padding: 8px 13px 11px; }
+  #panel:not(.open) #sec-treasury,
   #panel:not(.open) #sec-fronts,
   #panel:not(.open) #sec-offers,
   #panel:not(.open) .sec.grow { display: none; }
@@ -402,6 +425,19 @@ button.mini.bad:hover { background: #cc543b; }
         <span class="grip"></span>
         <span id="drawer-label">Krallıklar</span>
       </button>
+
+      <div class="sec" id="sec-treasury">
+        <div class="sec-h">Hazine</div>
+        <div class="cap-bar">
+          <i id="cap-fill"></i>
+          <span id="cap-soft" class="cap-mark"></span>
+        </div>
+        <div class="econ">
+          <span>Bileşik faiz</span><b id="econ-int">—</b>
+          <span>Arazi geliri</span><b id="econ-inc">—</b>
+          <span>Yumuşak tavan</span><b id="econ-soft">—</b>
+        </div>
+      </div>
 
       <div class="sec">
         <div class="sec-h">Saldırı Gücü</div>
@@ -697,13 +733,32 @@ const NATION_DEFS = [
 const WIN_FRAC = 0.60;
 const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 
+// --- ekonomi (territorial.io modeli) ---
+// İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
+// INCOME_PERIOD'da toprağın kadar düz gelir. Faiz oranı toprak payıyla
+// yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
+const TICK = 0.56;                    // faiz periyodu (sn)
+const INCOME_PERIOD = 5.6;            // arazi geliri periyodu (sn)
+const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
+const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
+// Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
+// asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
+// bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
+const SOFT_MULT = 40;                 // yumuşak tavan = toprak × bu
+const HARD_MULT = 60;                 // sert tavan — faiz burada tam durur
+const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
+const EARLY_SECS = 100;               // bu sürede 1'e iner
+const START_MULT = 9;                 // başlangıç askeri = toprak × bu
+
 // --- saldırı dengesi ---
-const NEUTRAL_COST = 1.5;             // tarafsız hücrenin bedeli
-const BASE_COST = 1.0;                // düşman hücresinin taban bedeli
-const DEF_K = 1.7;                    // savunanın asker yoğunluğunun ağırlığı
-const DEF_LOSS = 0.55;                // savunan, alınan hücre başına kaybettiği
-const RATE_BASE = 26;                 // hücre/sn taban yayılma hızı
-const RATE_K = 3.1;                   // askerle artan hız
+// Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
+// asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
+const NEUTRAL_COST = 25;              // tarafsız hücrenin bedeli
+const BASE_COST = 22;                 // düşman hücresinin taban bedeli
+const DEF_K = 1.8;                    // savunanın asker yoğunluğunun ağırlığı
+const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
+const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
+const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 
 function createSim(seed) {
   const world = createWorld(seed);
@@ -749,7 +804,7 @@ function createSim(seed) {
 
   NATION_DEFS.forEach(([name, color], i) => {
     const nat = {
-      id: i, name, color, pool: 140, cells: 0,
+      id: i, name, color, pool: 0, cells: 0,
       alive: true, ai: true,
       allies: new Set(), lockUntil: 0,
       lastThink: rnd() * 2.5,
@@ -764,6 +819,9 @@ function createSim(seed) {
       const c = idx(cx, cy);
       if (world.isLand[c] && owner[c] === -1) { owner[c] = i; nat.cells++; }
     }
+    // Başlangıç askeri toprağa oranlı olmalı: sabit bir sayı, bedel ölçeği
+    // değiştiğinde açılışı ölü doğurur (140 asker ≈ 5 hücre demekti).
+    nat.pool = nat.cells * START_MULT;
   });
 
   return sim;
@@ -780,8 +838,24 @@ const allied = (a, b) => a.allies.has(b.id);
 const locked = (sim, n) => n.lockUntil > sim.realT;
 const landFrac = (sim, nat) => nat.cells / sim.landCells;
 
-function troopCap(sim, nat) { return 140 + nat.cells * 2.6; }
-function density(nat) { return nat.pool / Math.max(30, nat.cells); }
+// Tavanlar toprağa bağlı: büyüdükçe biriktirebileceğin asker de büyür.
+function softCap(sim, nat) { return Math.max(60, nat.cells * SOFT_MULT); }
+function hardCap(sim, nat) { return Math.max(90, nat.cells * HARD_MULT); }
+const troopCap = hardCap;      // arayüzde gösterilen tavan
+
+// Tik başına bileşik faiz oranı. Toprak payıyla yükselir, yumuşak tavandan
+// sonra doğrusal olarak sıfıra iner — sonsuz birikim yok ama doygunluk da
+// düz bir çizgi değil.
+function interestRate(sim, nat) {
+  const frac = nat.cells / sim.landCells;
+  let r = INTEREST_MIN + (INTEREST_MAX - INTEREST_MIN) * frac;
+  if (sim.t < EARLY_SECS) r *= 1 + (EARLY_BOOST - 1) * (1 - sim.t / EARLY_SECS);
+  const soft = softCap(sim, nat), hard = hardCap(sim, nat);
+  if (nat.pool > soft) r *= clamp(1 - (nat.pool - soft) / (hard - soft), 0, 1);
+  return r;
+}
+
+function density(nat) { return nat.pool / Math.max(25, nat.cells); }
 function power(sim, nat) {
   let onFront = 0;
   for (const a of sim.attacks) if (a.from === nat.id) onFront += a.troops;
@@ -843,7 +917,8 @@ function attackCost(sim, targetId) {
 function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
   troops = Math.min(troops, nat.pool);
-  if (troops < attackCost(sim, targetId) * 2) return null;
+  const cost = attackCost(sim, targetId);
+  if (troops < cost) return null;                 // tek hücreye bile yetmiyor
 
   const q = [];
   const inQ = new Set();
@@ -858,9 +933,12 @@ function startAttack(sim, nat, targetId, troops) {
   if (!q.length) return null;
 
   nat.pool -= troops;
+  // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
+  // ölçekten bağımsız olarak hep ~ATTACK_SECS sürer, yani izlenebilir kalır.
+  const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    troops, start: troops, q, qi: 0, inQ, acc: 0,
+    troops, start: troops, q, qi: 0, inQ, acc: 0, rate,
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -875,6 +953,7 @@ function cancelAttack(sim, atk) {
 }
 
 function take(sim, cell, nat) {
+  if (!sim.world.isLand[cell]) return;      // deniz sahiplenilemez
   const o = sim.owner[cell];
   if (o >= 0) {
     const def = sim.nations[o];
@@ -906,7 +985,7 @@ function stepAttacks(sim, dt) {
     const nat = sim.nations[a.from];
     if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
 
-    a.acc += (RATE_BASE + Math.sqrt(a.troops) * RATE_K) * dt;
+    a.acc += a.rate * dt;
     let budget = Math.floor(a.acc);
     if (budget <= 0) continue;
     a.acc -= budget;
@@ -926,6 +1005,11 @@ function stepAttacks(sim, dt) {
       take(sim, c, nat);
       took++;
       for (const n of nbs(c, tmp)) {
+        // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
+        // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
+        // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
+        // ulus karaya doğru büyüyemez.
+        if (!sim.world.isLand[n]) continue;
         if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.q.push(n); }
       }
     }
@@ -943,9 +1027,11 @@ function stepAttacks(sim, dt) {
 function stepGrowth(sim, dt) {
   for (const nat of sim.nations) {
     if (!nat.alive) continue;
-    const cap = troopCap(sim, nat);
-    const g = (0.09 * nat.pool * (1 - nat.pool / cap) + nat.cells * 0.05 + 3) * dt;
-    nat.pool = clamp(nat.pool + g, 0, cap);
+    // 1) bileşik faiz — asker askeri doğurur
+    nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
+    // 2) arazi geliri — her periyotta toprağın kadar asker
+    nat.pool += nat.cells * (dt / INCOME_PERIOD);
+    nat.pool = clamp(nat.pool, 0, hardCap(sim, nat));
   }
 }
 
@@ -984,7 +1070,7 @@ function aiThink(sim, nat) {
     }
   }
 
-  if (busy || locked(sim, nat) || nat.pool < troopCap(sim, nat) * 0.35) return;
+  if (busy || locked(sim, nat) || nat.pool < softCap(sim, nat) * 0.35) return;
 
   // hedef: en ucuz komşu. Tarafsız toprak varsa ona öncelik.
   let best = null, bestScore = -Infinity;
@@ -994,9 +1080,11 @@ function aiThink(sim, nat) {
       if (!o.alive || allied(nat, o)) continue;
       if (power(sim, o) > power(sim, nat) * 1.5) continue;   // kendinden çok güçlüye girme
     }
-    // ucuzluk + büyük hedefi kırpma isteği
-    const score = (id < 0 ? 3 : 1) / attackCost(sim, id)
-      + (id >= 0 ? landFrac(sim, sim.nations[id]) * 2.5 : 0);
+    // Asker başına kazanılan toprak. Büyük hedefi kırpma isteği ÇARPAN olarak
+    // eklenir — toplama olsaydı bedel ölçeği değiştiğinde terimlerden biri
+    // diğerini ezerdi (bedeller büyüyünce YZ boş toprağı görmez olmuştu).
+    let score = (id < 0 ? 2.5 : 1) / attackCost(sim, id);
+    if (id >= 0) score *= 1 + landFrac(sim, sim.nations[id]) * 1.5;
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
@@ -1536,7 +1624,22 @@ function refreshTop() {
     lockEl.classList.remove('hidden');
     lockEl.textContent = `⛔ ${Math.ceil(me.lockUntil - sim.realT)}sn`;
   } else lockEl.classList.add('hidden');
+  refreshTreasury(me);
   refreshPct();
+}
+
+// Faiz bileşik çalışıyor ama görünmezse tekdüze hissediliyor — oranı,
+// geliri ve tavana ne kadar kaldığını açıkça göster.
+function refreshTreasury(me) {
+  const soft = softCap(sim, me), hard = hardCap(sim, me);
+  const r = interestRate(sim, me);
+  $('cap-fill').style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
+  $('cap-fill').style.background = me.color;
+  $('cap-soft').style.left = (soft / hard * 100) + '%';
+  $('econ-int').textContent = r > 0 ? `%${(r * 100).toFixed(2)} / tik` : 'durdu (tavan)';
+  $('econ-int').className = r > 0 ? '' : 'stalled';
+  $('econ-inc').textContent = `+${fmt(me.cells)} / 5.6sn`;
+  $('econ-soft').textContent = fmt(soft);
 }
 
 function mkBtn(text, cls, fn, title) {

@@ -5,6 +5,7 @@ import {
   createSim, step, startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, allied, locked, landFrac, troopCap,
   density, power, BETRAY_LOCK, WIN_FRAC,
+  interestRate, softCap, hardCap,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -132,7 +133,7 @@ t('yayılma sınırdan başlar — kopuk toprak oluşmaz', () => {
 t('asker bitince saldırı durur', () => {
   const s = fresh();
   const nat = s.nations[0];
-  const a = startAttack(s, nat, -1, 60);          // az asker
+  const a = startAttack(s, nat, -1, attackCost(s, -1) * 3);   // 3 hücrelik asker
   assert(a, 'saldırı başlamadı');
   // not: s.attacks bütün ulusları kapsar, bu yüzden yalnız oyuncununkine bak
   for (let i = 0; i < 400; i++) step(s, 1 / 30, 1 / 30);
@@ -165,10 +166,11 @@ t('geri çağrılan seferin askeri garnizona döner', () => {
 t('kalabalık ordu daha pahalıya saldırılır', () => {
   const s = fresh();
   const zayif = s.nations[1], guclu = s.nations[2];
-  zayif.pool = 100; zayif.cells = 400;
-  guclu.pool = 3000; guclu.cells = 400;
+  // aynı toprak, biri neredeyse boş biri tavanına yakın dolu
+  zayif.cells = 400; zayif.pool = 400;                  // yoğunluk 1
+  guclu.cells = 400; guclu.pool = hardCap(s, guclu);    // yoğunluk 60
   assert(attackCost(s, guclu.id) > attackCost(s, zayif.id) * 2,
-    `${attackCost(s, zayif.id).toFixed(2)} vs ${attackCost(s, guclu.id).toFixed(2)}`);
+    `${attackCost(s, zayif.id).toFixed(1)} vs ${attackCost(s, guclu.id).toFixed(1)}`);
 });
 
 t('savunan da hücre başına asker kaybeder', () => {
@@ -194,6 +196,191 @@ t('ele geçen hücrenin zamanı damgalanır (parlama için)', () => {
   for (let c = 0; c < W * H; c++)
     if (s.owner[c] === nat.id && s.lastCapture[c] > 0) yeni++;
   assert(yeni > 0, 'hiç hücre damgalanmadı');
+});
+
+// ---------------------------------------------------------------- deniz
+
+console.log('\nDeniz sınırı');
+
+// Tarafsız hedefte deniz de owner === -1 olduğu için, cephe kuyruğu karayı
+// kontrol etmezse dalga okyanusa akıyordu: görünmez hücreler ele geçiyor,
+// saldırı bütçesi orada eriyor ve kıyıda başlayan ulus karaya büyüyemiyordu.
+t('tek bir deniz hücresi bile sahiplenilemez', () => {
+  const s = createSim(7);
+  for (let i = 0; i < 8000; i++) step(s, 0.05, 0.05);
+  let deniz = 0;
+  for (let i = 0; i < W * H; i++)
+    if (!s.world.isLand[i] && s.owner[i] >= 0) deniz++;
+  assert.equal(deniz, 0, `${deniz} deniz hücresi ele geçirilmiş`);
+});
+
+t('toprak oranı hiçbir zaman %100ü aşmaz', () => {
+  const s = createSim(11);
+  for (let i = 0; i < 12000; i++) {
+    step(s, 0.05, 0.05);
+    if (i % 900) continue;
+    for (const n of s.nations)
+      assert(landFrac(s, n) <= 1.0001, `${n.name} %${(landFrac(s, n) * 100).toFixed(1)}`);
+  }
+});
+
+t('kıyıda başlayan ulus karaya doğru büyüyor, kıyı şeridinde kalmıyor', () => {
+  // denize komşu bir yurt bul
+  const s = createSim(3);
+  s.playerId = 0;
+  for (const n of s.nations) n.ai = false;
+  let kiyili = null;
+  for (const nat of s.nations) {
+    for (let c = 0; c < W * H; c++) {
+      if (s.owner[c] !== nat.id) continue;
+      const x = c % W;
+      const nb = [];
+      if (x > 0) nb.push(c - 1);
+      if (x < W - 1) nb.push(c + 1);
+      if (c >= W) nb.push(c - W);
+      if (c < W * (H - 1)) nb.push(c + W);
+      if (nb.some(n => !s.world.isLand[n])) { kiyili = nat; break; }
+    }
+    if (kiyili) break;
+  }
+  if (!kiyili) return;                      // bu haritada kıyı yurdu yok
+
+  const denizeKomsu = c => {
+    const x = c % W;
+    const nb = [];
+    if (x > 0) nb.push(c - 1);
+    if (x < W - 1) nb.push(c + 1);
+    if (c >= W) nb.push(c - W);
+    if (c < W * (H - 1)) nb.push(c + W);
+    return nb.some(n => !s.world.isLand[n]);
+  };
+
+  kiyili.pool = hardCap(s, kiyili);
+  const once = kiyili.cells;
+  startAttack(s, kiyili, -1, kiyili.pool);
+  for (let i = 0; i < 400; i++) step(s, 1 / 30, 1 / 30);
+  assert(kiyili.cells > once, 'hiç büyümedi');
+
+  // yeni alınan hücrelerin çoğu denize komşu OLMAMALI — yani iç kesime girdi
+  let ic = 0, sahil = 0;
+  for (let c = 0; c < W * H; c++) {
+    if (s.owner[c] !== kiyili.id || s.lastCapture[c] <= 0) continue;
+    denizeKomsu(c) ? sahil++ : ic++;
+  }
+  assert(ic > sahil, `iç kesim ${ic}, sahil ${sahil} — dalga kıyıda takılıyor`);
+});
+
+// ---------------------------------------------------------------- ekonomi
+
+console.log('\nEkonomi — bileşik büyüme');
+
+t('faiz bileşik: eşit aralıklarda artış hızlanıyor', () => {
+  const s = createSim(1);
+  for (const n of s.nations) n.ai = false;   // saldırı olmasın
+  const nat = s.nations[0];
+  // Yumuşak tavana yaklaşınca faiz kısılır; hızlanmayı görmek için
+  // ölçümü tavanın çok altındaki bölgede yap.
+  nat.pool = softCap(s, nat) * 0.04;
+  const artislar = [];
+  let prev = nat.pool;
+  for (let d = 0; d < 3; d++) {
+    for (let i = 0; i < 300; i++) step(s, 0.05, 0.05);   // 15 sn
+    artislar.push(nat.pool - prev);
+    prev = nat.pool;
+  }
+  assert(nat.pool < softCap(s, nat),
+    `ölçüm yumuşak tavanı aştı (${Math.round(nat.pool)} / ${Math.round(softCap(s, nat))})`);
+  assert(artislar[1] > artislar[0] * 1.15 && artislar[2] > artislar[1] * 1.15,
+    `artışlar hızlanmıyor: ${artislar.map(a => Math.round(a)).join(' → ')}`);
+});
+
+t('faiz oranı toprak payıyla yükseliyor', () => {
+  const s = createSim(1);
+  const kucuk = s.nations[0], buyuk = s.nations[1];
+  s.t = 200;                                  // açılış çarpanı bitsin
+  kucuk.cells = 100; kucuk.pool = 10;
+  buyuk.cells = Math.round(s.landCells * 0.8); buyuk.pool = 10;
+  assert(interestRate(s, buyuk) > interestRate(s, kucuk) * 1.5,
+    `${(interestRate(s, kucuk) * 100).toFixed(2)}% vs ${(interestRate(s, buyuk) * 100).toFixed(2)}%`);
+});
+
+t('açılışta faiz daha yüksek, sonra iniyor', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  nat.pool = 10;
+  s.t = 0;
+  const acilis = interestRate(s, nat);
+  s.t = 500;
+  assert(acilis > interestRate(s, nat) * 1.3,
+    `açılış %${(acilis * 100).toFixed(2)}, sonrası %${(interestRate(s, nat) * 100).toFixed(2)}`);
+});
+
+t('yumuşak tavanı geçince faiz azalıyor, sert tavanda sıfır', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  s.t = 500;
+  nat.cells = 500;
+  const soft = softCap(s, nat), hard = hardCap(s, nat);
+  nat.pool = soft * 0.5;
+  const normal = interestRate(s, nat);
+  nat.pool = (soft + hard) / 2;
+  const orta = interestRate(s, nat);
+  nat.pool = hard;
+  const bitti = interestRate(s, nat);
+  assert(normal > 0, 'normalde faiz yok');
+  assert(orta > 0 && orta < normal, `arada azalmıyor: ${orta} vs ${normal}`);
+  assert(bitti === 0, `sert tavanda faiz ${bitti}`);
+});
+
+t('tavanlar toprakla büyüyor', () => {
+  const s = createSim(1);
+  const nat = s.nations[0];
+  nat.cells = 100;
+  const a = softCap(s, nat), ah = hardCap(s, nat);
+  nat.cells = 1000;
+  assert(softCap(s, nat) > a * 5 && hardCap(s, nat) > ah * 5, 'tavan toprakla artmıyor');
+  assert(hardCap(s, nat) > softCap(s, nat), 'sert tavan yumuşaktan küçük');
+});
+
+t('arazi geliri toprakla orantılı', () => {
+  const mk = (cells) => {
+    const s = createSim(1);
+    for (const n of s.nations) n.ai = false;
+    const nat = s.nations[0];
+    nat.cells = cells; nat.pool = 0;         // faiz 0 üzerinden çalışmaz
+    for (let i = 0; i < 112; i++) step(s, 0.05, 0.05);   // 5.6 sn = bir periyot
+    return nat.pool;
+  };
+  const az = mk(100), cok = mk(400);
+  assert(cok > az * 3, `100 toprak ${az.toFixed(0)}, 400 toprak ${cok.toFixed(0)}`);
+});
+
+t('asker sert tavanı aşamaz', () => {
+  const s = createSim(1);
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  nat.pool = hardCap(s, nat) * 5;            // yapay olarak taşır
+  for (let i = 0; i < 200; i++) step(s, 0.05, 0.05);
+  assert(nat.pool <= hardCap(s, nat) + 1, `${nat.pool} > ${hardCap(s, nat)}`);
+});
+
+t('dalga ölçekten bağımsız olarak izlenebilir sürede akıyor', () => {
+  // küçük ve büyük saldırı benzer sürede bitmeli (hız askere göre ayarlanıyor)
+  const sure = (troops) => {
+    const s = createSim(5);
+    for (const n of s.nations) n.ai = false;
+    const nat = s.nations[0];
+    nat.pool = troops;
+    const a = startAttack(s, nat, -1, troops);
+    if (!a) return null;
+    let ticks = 0;
+    while (s.attacks.includes(a) && ticks < 3000) { step(s, 1 / 60, 1 / 60); ticks++; }
+    return ticks / 60;
+  };
+  const kucuk = sure(400), buyuk = sure(20000);
+  if (kucuk === null || buyuk === null) return;
+  assert(buyuk < kucuk * 4, `küçük ${kucuk.toFixed(1)}sn, büyük ${buyuk.toFixed(1)}sn`);
+  console.log(`      → 400 asker ${kucuk.toFixed(1)}sn, 20000 asker ${buyuk.toFixed(1)}sn`);
 });
 
 // ---------------------------------------------------------------- ittifak

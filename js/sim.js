@@ -16,13 +16,32 @@ export const NATION_DEFS = [
 export const WIN_FRAC = 0.60;
 export const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 
+// --- ekonomi (territorial.io modeli) ---
+// İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
+// INCOME_PERIOD'da toprağın kadar düz gelir. Faiz oranı toprak payıyla
+// yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
+const TICK = 0.56;                    // faiz periyodu (sn)
+const INCOME_PERIOD = 5.6;            // arazi geliri periyodu (sn)
+const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
+const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
+// Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
+// asker toprağın ~5 katını aştıktan sonra baskın olur; tavan dar tutulursa
+// bileşik büyüme hiç hissedilmez. Bu yüzden aralık geniş.
+const SOFT_MULT = 40;                 // yumuşak tavan = toprak × bu
+const HARD_MULT = 60;                 // sert tavan — faiz burada tam durur
+const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
+const EARLY_SECS = 100;               // bu sürede 1'e iner
+const START_MULT = 9;                 // başlangıç askeri = toprak × bu
+
 // --- saldırı dengesi ---
-const NEUTRAL_COST = 1.5;             // tarafsız hücrenin bedeli
-const BASE_COST = 1.0;                // düşman hücresinin taban bedeli
-const DEF_K = 1.7;                    // savunanın asker yoğunluğunun ağırlığı
-const DEF_LOSS = 0.55;                // savunan, alınan hücre başına kaybettiği
-const RATE_BASE = 26;                 // hücre/sn taban yayılma hızı
-const RATE_K = 3.1;                   // askerle artan hız
+// Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
+// asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
+const NEUTRAL_COST = 25;              // tarafsız hücrenin bedeli
+const BASE_COST = 22;                 // düşman hücresinin taban bedeli
+const DEF_K = 1.8;                    // savunanın asker yoğunluğunun ağırlığı
+const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
+const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
+const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 
 export function createSim(seed) {
   const world = createWorld(seed);
@@ -68,7 +87,7 @@ export function createSim(seed) {
 
   NATION_DEFS.forEach(([name, color], i) => {
     const nat = {
-      id: i, name, color, pool: 140, cells: 0,
+      id: i, name, color, pool: 0, cells: 0,
       alive: true, ai: true,
       allies: new Set(), lockUntil: 0,
       lastThink: rnd() * 2.5,
@@ -83,6 +102,9 @@ export function createSim(seed) {
       const c = idx(cx, cy);
       if (world.isLand[c] && owner[c] === -1) { owner[c] = i; nat.cells++; }
     }
+    // Başlangıç askeri toprağa oranlı olmalı: sabit bir sayı, bedel ölçeği
+    // değiştiğinde açılışı ölü doğurur (140 asker ≈ 5 hücre demekti).
+    nat.pool = nat.cells * START_MULT;
   });
 
   return sim;
@@ -99,8 +121,24 @@ export const allied = (a, b) => a.allies.has(b.id);
 export const locked = (sim, n) => n.lockUntil > sim.realT;
 export const landFrac = (sim, nat) => nat.cells / sim.landCells;
 
-export function troopCap(sim, nat) { return 140 + nat.cells * 2.6; }
-export function density(nat) { return nat.pool / Math.max(30, nat.cells); }
+// Tavanlar toprağa bağlı: büyüdükçe biriktirebileceğin asker de büyür.
+export function softCap(sim, nat) { return Math.max(60, nat.cells * SOFT_MULT); }
+export function hardCap(sim, nat) { return Math.max(90, nat.cells * HARD_MULT); }
+export const troopCap = hardCap;      // arayüzde gösterilen tavan
+
+// Tik başına bileşik faiz oranı. Toprak payıyla yükselir, yumuşak tavandan
+// sonra doğrusal olarak sıfıra iner — sonsuz birikim yok ama doygunluk da
+// düz bir çizgi değil.
+export function interestRate(sim, nat) {
+  const frac = nat.cells / sim.landCells;
+  let r = INTEREST_MIN + (INTEREST_MAX - INTEREST_MIN) * frac;
+  if (sim.t < EARLY_SECS) r *= 1 + (EARLY_BOOST - 1) * (1 - sim.t / EARLY_SECS);
+  const soft = softCap(sim, nat), hard = hardCap(sim, nat);
+  if (nat.pool > soft) r *= clamp(1 - (nat.pool - soft) / (hard - soft), 0, 1);
+  return r;
+}
+
+export function density(nat) { return nat.pool / Math.max(25, nat.cells); }
 export function power(sim, nat) {
   let onFront = 0;
   for (const a of sim.attacks) if (a.from === nat.id) onFront += a.troops;
@@ -162,7 +200,8 @@ export function attackCost(sim, targetId) {
 export function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
   troops = Math.min(troops, nat.pool);
-  if (troops < attackCost(sim, targetId) * 2) return null;
+  const cost = attackCost(sim, targetId);
+  if (troops < cost) return null;                 // tek hücreye bile yetmiyor
 
   const q = [];
   const inQ = new Set();
@@ -177,9 +216,12 @@ export function startAttack(sim, nat, targetId, troops) {
   if (!q.length) return null;
 
   nat.pool -= troops;
+  // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
+  // ölçekten bağımsız olarak hep ~ATTACK_SECS sürer, yani izlenebilir kalır.
+  const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    troops, start: troops, q, qi: 0, inQ, acc: 0,
+    troops, start: troops, q, qi: 0, inQ, acc: 0, rate,
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -194,6 +236,7 @@ export function cancelAttack(sim, atk) {
 }
 
 function take(sim, cell, nat) {
+  if (!sim.world.isLand[cell]) return;      // deniz sahiplenilemez
   const o = sim.owner[cell];
   if (o >= 0) {
     const def = sim.nations[o];
@@ -225,7 +268,7 @@ function stepAttacks(sim, dt) {
     const nat = sim.nations[a.from];
     if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
 
-    a.acc += (RATE_BASE + Math.sqrt(a.troops) * RATE_K) * dt;
+    a.acc += a.rate * dt;
     let budget = Math.floor(a.acc);
     if (budget <= 0) continue;
     a.acc -= budget;
@@ -245,6 +288,11 @@ function stepAttacks(sim, dt) {
       take(sim, c, nat);
       took++;
       for (const n of nbs(c, tmp)) {
+        // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
+        // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
+        // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
+        // ulus karaya doğru büyüyemez.
+        if (!sim.world.isLand[n]) continue;
         if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.q.push(n); }
       }
     }
@@ -262,9 +310,11 @@ function stepAttacks(sim, dt) {
 function stepGrowth(sim, dt) {
   for (const nat of sim.nations) {
     if (!nat.alive) continue;
-    const cap = troopCap(sim, nat);
-    const g = (0.09 * nat.pool * (1 - nat.pool / cap) + nat.cells * 0.05 + 3) * dt;
-    nat.pool = clamp(nat.pool + g, 0, cap);
+    // 1) bileşik faiz — asker askeri doğurur
+    nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
+    // 2) arazi geliri — her periyotta toprağın kadar asker
+    nat.pool += nat.cells * (dt / INCOME_PERIOD);
+    nat.pool = clamp(nat.pool, 0, hardCap(sim, nat));
   }
 }
 
@@ -303,7 +353,7 @@ function aiThink(sim, nat) {
     }
   }
 
-  if (busy || locked(sim, nat) || nat.pool < troopCap(sim, nat) * 0.35) return;
+  if (busy || locked(sim, nat) || nat.pool < softCap(sim, nat) * 0.35) return;
 
   // hedef: en ucuz komşu. Tarafsız toprak varsa ona öncelik.
   let best = null, bestScore = -Infinity;
@@ -313,9 +363,11 @@ function aiThink(sim, nat) {
       if (!o.alive || allied(nat, o)) continue;
       if (power(sim, o) > power(sim, nat) * 1.5) continue;   // kendinden çok güçlüye girme
     }
-    // ucuzluk + büyük hedefi kırpma isteği
-    const score = (id < 0 ? 3 : 1) / attackCost(sim, id)
-      + (id >= 0 ? landFrac(sim, sim.nations[id]) * 2.5 : 0);
+    // Asker başına kazanılan toprak. Büyük hedefi kırpma isteği ÇARPAN olarak
+    // eklenir — toplama olsaydı bedel ölçeği değiştiğinde terimlerden biri
+    // diğerini ezerdi (bedeller büyüyünce YZ boş toprağı görmez olmuştu).
+    let score = (id < 0 ? 2.5 : 1) / attackCost(sim, id);
+    if (id >= 0) score *= 1 + landFrac(sim, sim.nations[id]) * 1.5;
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
