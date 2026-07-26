@@ -32,9 +32,10 @@ const LAND_CHEAP = 1.6;
 const SPEED = 3;
 // Arsa ödemesi asker birimindedir, bu yüzden asker ölçeğiyle birlikte küçülür.
 export const INCOME_SCALE = SPEED * TROOP_SCALE;
-// Arazi geliri toprakla üstel artar ama üs 1'e yakın tutulur: büyümek biraz
-// kendini besler, yoksa lider ilk çeyrekte kopuyor ve küçüklerin şansı kalmıyor.
-const INCOME_EXP = 1.09;
+// Arazi geliri toprakla üstel artar ama üs neredeyse 1: büyümek çok az
+// kendini besler. Tam 1 yaparsak oyun kilitleniyor (12 tohumda 4'ü çözüldü),
+// bu yüzden üstellik sıfırlanmıyor, yalnızca hissedilmez seviyeye çekiliyor.
+const INCOME_EXP = 1.03;
 // Gelir tikinde faiz de toplu (balon) ödeme yapar — tik faizinin bu katı.
 const BALLOON = 6;
 // Faiz bir ORAN: asker ölçeğiyle değil, yalnız hızla çarpılır.

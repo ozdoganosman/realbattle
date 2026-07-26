@@ -113,6 +113,13 @@ check('hedefin toprağı vurgulanıyor (hover)',
   await page.evaluate(() => window.__rb.ui.hoverOwner !== undefined));
 await page.screenshot({ path: path.join(OUT, '02-hedef.png') });
 
+// Varsayılan konumda hamle çoğu zaman TEK halkaya yuvarlanır ve ilk karede
+// biter — süren bir cephe görmek için kaydıracı yukarı çek.
+await page.evaluate(async () => {
+  const p = document.getElementById('pct');
+  p.value = '85'; p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 40));
+});
 const before = await info();
 await page.mouse.click(target.sx, target.sy);
 await page.waitForTimeout(200);
@@ -139,19 +146,31 @@ check('ele geçen hücreler parlama için damgalanıyor', await page.evaluate(()
 
 // ---------------------------------------------------------------- geri çağırma
 console.log('\nSeferi geri çağırma');
-const poolBeforeCancel = (await info()).pool;
-const stillRunning = await page.evaluate(() =>
-  window.__rb.sim.attacks.some(a => a.from === window.__rb.sim.playerId));
-if (stillRunning) {
-  await page.click('#fronts button');
-  await page.waitForTimeout(200);
-  const c = await info();
-  check('geri çağırınca sefer kapanıyor', c.fronts === 0);
-  check('kalan asker garnizona dönüyor', c.pool > poolBeforeCancel,
-    `${poolBeforeCancel} → ${c.pool}`);
-} else {
-  check('sefer kendiliğinden bitti (geri çağırma denenemedi)', true);
-}
+// Ölçüm sırasında oyunu durdur: en küçük hamleye yuvarlanan bir sefer askerini
+// ilk halkada bitirir ve geriye bir şey kalmaz — bilerek fazla asker sürülür.
+const iade = await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  const hiz = window.__rb.ui.speed;
+  window.__rb.ui.speed = 0;
+  const me = sim.nations[sim.playerId];
+  sim.attacks.length = 0;
+  me.lockUntil = 0;
+  me.pool = api.hardCap(sim, me);
+  const cephe = api.frontCost(sim, me, -1);
+  const surulen = cephe * 6;                 // altı halkalık asker
+  const atk = api.startAttack(sim, me, -1, surulen);
+  const havuzSonra = me.pool;
+  const acikti = sim.attacks.length === 1;
+  api.cancelAttack(sim, atk);
+  const sonuc = { acikti, kapandi: sim.attacks.length === 0,
+    havuzSonra, iade: me.pool - havuzSonra, kalan: atk.troops };
+  window.__rb.ui.speed = hiz;
+  return sonuc;
+});
+check('geri çağırınca sefer kapanıyor', iade.acikti && iade.kapandi, JSON.stringify(iade));
+check('kalan asker garnizona dönüyor', iade.iade > 0 && Math.abs(iade.iade - iade.kalan) < 1,
+  JSON.stringify(iade));
+await page.click('#btn-play');
 
 // ---------------------------------------------------------------- oynanış
 console.log('\nSimülasyon akışı');
