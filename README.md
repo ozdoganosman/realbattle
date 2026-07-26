@@ -27,15 +27,16 @@ indirmek oyunu kabaca iki katına çıkarır.
 | **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler ve bütçe halkanın bütün hücrelerine **eşit** dağıtılır: her hücrenin kuşatma ilerlemesi aynı anda, aynı hızda artar. Hücre ancak ilerlemesi dolunca el değiştirir, yani sınır her yerde birlikte hareket eder — sıra sıra tek hücre düşen fermuar ya da dağınık benek görüntüsü yok. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
 | **Tam halka** | Hamle **tam halkalara** yuvarlanır: sınır ya bir hücre birden ilerler ya hiç. Yarım halka bırakmak cepheyi tırtıklı, nokta nokta gösteriyordu. Sefer sürerken bütün cephe senin rengine doğru birlikte kayar (kuşatma), halka dolunca hep birlikte düşer. Artan kuşatma **iade** edilir — asker heba olmaz, haritada iz kalmaz. Kaydıracın altındaki yazı sınırı kaç hücre iteceğini söyler. |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** — oran toprak payıyla yükselir ve aralık geniştir: bir avuç toprakla tik başına ~**%1.2**, kıtaya hükmederken ~**%14** (açılışta ayrıca 1.9 kat hızlı). Küçükken ekonomi sürünür, büyüdükçe uçar. Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs neredeyse 1 (toprak iki katına çıkınca ödeme ~2.04 kat), yani büyümek kendini az besler ve lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
-| **Tavanlar** | Yumuşak tavan toprağın ~**114 katı**, sert tavan ~**171 katı** (eski tavanın 10 katı). İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok ama hazine çok derin, bileşik faiz uzun süre çalışıyor ve dolu hazineyle devasa hamleler yapılabiliyor. Savunma katsayısı bu büyümeyle birlikte bölünür, yani savunmanın *şekli* aynı kalır: boş hazine **2.5**, yumuşak tavan **21**, sert tavan **32** asker/hücre. |
+| **Tavanlar** | Yumuşak tavan toprağın ~**114 katı**, sert tavan ~**171 katı** (eski tavanın 10 katı). İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok ama hazine çok derin, bileşik faiz uzun süre çalışıyor ve dolu hazineyle devasa hamleler yapılabiliyor. Savunma katsayısı bu büyümeyle birlikte bölünür, yani savunmanın *şekli* aynı kalır: boş hazine **4**, yumuşak tavan **34**, sert tavan **51** asker/hücre. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
 | **Borçlanma** | Borç bölgesi kaydıracın son diliminde (kırmızı) sabittir — oraya çekmeden borçlanmazsın. Borç sınırı toprağın ~**29 katı** — sert tavanın %17'si, tavanla birlikte ölçeklenir. Hazinen bittiğinde de saldırabilirsin, ama bu bilinçli bir tercihtir: askerin eksiye düşer, gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
-| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 2.5 askere gelir, hazinesi tıka basa dolu olanınki **32** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
+| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 4 askere gelir, hazinesi tıka basa dolu olanınki **51** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
 | **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
-| **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
+| **Tek hedef, tek cephe** | Bir hedefe karşı aynı anda **tek** sefer sürer. Cephe zaten o hedefle paylaştığın bütün sınır hattı olduğu için ikinci bir sefer yeni bir yere yüklenmez — aynı hücreleri kuşatır. Daha çok asker sürmek istersen önce geri çağır, sonra gücü yükseltip yeniden çık. |
+| **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner (hazine tavanı taşarsa fazlası kırpılır). |
 | **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
-| **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
-| **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. |
+| **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** ve **süren bütün seferleri o anda geri çağrılır** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
+| **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. Kural iki yönlüdür: lidere teklif götüremezsin, lider konumundaysan sana da kimse yanaşmaz. |
 
 Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
@@ -78,15 +79,15 @@ npm run build
 ```
 
 `dist/realbattle.html` — bütün modüllerin ve CSS'in tek dosyaya paketlenmiş,
-kendi başına açılan hâli (~60 KB). Dış bağımlılığı yok; doğrudan çift
+kendi başına açılan hâli (~100 KB). Dış bağımlılığı yok; doğrudan çift
 tıklayarak da açılır. `dist/artifact.html` ise `<head>`'i kendi sağlayan
 ortamlar için yalnız gövde içeriğini taşır.
 
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (73)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (49)
+npm test               # başsız simülasyon (77)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (52)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
 ```

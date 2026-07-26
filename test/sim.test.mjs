@@ -523,6 +523,75 @@ t('ittifak bozulunca kuşatma izi de temizlenir', () => {
   assert.equal(s.attacks.filter(x => x.from === A.id).length, 0, 'sefer kapanmadı');
 });
 
+// Cephe zaten hedefle paylaşılan BÜTÜN sınır hattıdır; ikinci sefer yeni bir
+// yere yüklenmez, aynı hücrelerin `prog`unu paylaşırdı. Biri kapanınca
+// diğerinin kuşatmasını haritadan siliyor ama `yatirim` alacağı duruyordu.
+t('aynı hedefe ikinci sefer açılmaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const cephe = frontCost(s, nat, -1);
+  nat.pool = hardCap(s, nat);
+  assert(startAttack(s, nat, -1, cephe * 2), 'ilk sefer başlamadı');
+  assert.equal(startAttack(s, nat, -1, cephe * 2), null, 'ikinci sefer de açıldı');
+  assert.equal(s.attacks.filter(a => a.from === nat.id).length, 1);
+});
+
+t('ikinci sefer denemesi hazineye dokunmaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const cephe = frontCost(s, nat, -1);
+  nat.pool = hardCap(s, nat);
+  startAttack(s, nat, -1, cephe * 2);
+  const sonra = nat.pool;
+  startAttack(s, nat, -1, cephe * 2);
+  assert.equal(nat.pool, sonra, 'reddedilen sefer yine de asker düşürdü');
+});
+
+// Seferin `yatirim` defteri = haritada FİİLEN duran kuşatmanın bedeli. İkinci
+// sefer bu ikisini ayırıyordu: biri kapanınca ötekinin ilerlemesini haritadan
+// siliyor ama alacağı defterde kalıyor, iade sırasında yoktan asker doğuyordu.
+// (Ekonomiden bağımsız bir ölçüt: büyüme bu invaryanta karışmaz.)
+t('sefer defteri haritadaki kuşatmayla birebir tutar', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const birim = attackCost(s, -1);
+  nat.pool = hardCap(s, nat) * 0.5;
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 4);
+  assert(a, 'sefer başlamadı');
+  for (let adim of [10, 30, 60, 120]) {
+    for (let i = 0; i < adim; i++) step(s, 1 / 60, 1 / 60);
+    if (!s.attacks.includes(a)) break;
+    let harita = 0;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) harita += s.prog[c];
+    const degeri = harita * birim;
+    // sim.prog Float32Array — kayan nokta payı göreli, mutlak değil
+    assert(Math.abs(a.yatirim - degeri) < 1e-5 * (1 + degeri),
+      `defter ${a.yatirim.toFixed(3)}, haritada ${degeri.toFixed(3)}`);
+  }
+});
+
+// Etiket ve ölüm efekti nat.cx/cy'ye çizilir. Sabit bırakılırsa ulus yayıldıkça
+// başlangıç yurdunda çakılı kalıp toprağının onlarca hücre dışına düşüyordu.
+t('ulus merkezi toprağıyla birlikte kayar', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  const bas = { x: nat.cx, y: nat.cy };
+  for (let i = 0; i < 4000; i++) step(s, 0.05, 0.05);
+  if (!nat.alive || nat.cells < 200) return;
+  // merkez, sahiplenilen hücrelerin gerçek ağırlık merkezinde olmalı
+  let sx = 0, sy = 0, k = 0;
+  for (let c = 0; c < W * H; c++)
+    if (s.owner[c] === nat.id) { sx += c % W; sy += (c / W) | 0; k++; }
+  const gx = Math.round(sx / k), gy = Math.round(sy / k);
+  assert(Math.hypot(nat.cx - gx, nat.cy - gy) <= 1,
+    `merkez kaydı: (${nat.cx},${nat.cy}) yerine (${gx},${gy}) olmalıydı`);
+  assert(bas.x !== nat.cx || bas.y !== nat.cy || k === 0,
+    'merkez hiç güncellenmemiş');
+});
+
 t('aynı karede iki sefer kapanınca doğru olanlar silinir', () => {
   const s = fresh();
   const A = s.nations[0], B = s.nations[1];

@@ -21,8 +21,9 @@ export const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // cepheler yeniden açılır.
 export const ALLY_SECS = 45;
 // Kıtanın bu kadarını tutan artık "lider"dir: kimse onunla ittifak kurmaz ve
-// gücü ne olursa olsun üstüne gidilebilir.
-const LEADER_FRAC = 0.35;
+// gücü ne olursa olsun üstüne gidilebilir. Arayüz de aynı eşiği kullanmalı —
+// oyuncunun lidere yanaşabilmesi tam da kilitlenmeyi getiren durumdu.
+export const LEADER_FRAC = 0.35;
 
 // --- ekonomi (territorial.io modeli) ---
 // İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
@@ -80,8 +81,9 @@ const BASE_COST = 14 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tab
 const DEF_EXP = 1.15;
 // Savunanın yoğunluk ağırlığı. Tavan CAP_BOOST kadar büyüyünce yoğunluk da
 // aynı oranda büyür, o yüzden katsayı CAP_BOOST^DEF_EXP ile bölünür: savunma
-// eğrisinin ŞEKLİ korunur (boş hazine 2.5, yumuşak tavan 21, sert tavan 32
-// asker/hücre). Bölünmeseydi dolu hazine 400 askere fırlar, harita kilitlenirdi.
+// eğrisinin ŞEKLİ korunur (boş hazine 4.0, yumuşak tavan 33.6, sert tavan 51.3
+// asker/hücre — sert/boş oranı 12.8 kat).
+// Bölünmeseydi dolu hazine 400 askere fırlar, harita kilitlenirdi.
 const DEF_K = 1.8 / LAND_CHEAP / Math.pow(CAP_BOOST, DEF_EXP);
 // Çarpışmada iki taraf da erir ama saldıran daha çok verir: savunan, hücrenin
 // bedelinin bu kadarını kaybeder (1'in altı = saldıran daha pahalıya alır).
@@ -138,6 +140,10 @@ export function createSim(seed) {
     }
     if (land > (2 * R + 1) ** 2 * 0.82) cand.push({ x, y });
   }
+  // Aday yoksa spots[i] undefined kalır ve aşağıdaki `spots[i].x` çöker.
+  // Harita üretimi her tohumda bol aday veriyor ama sessiz çökme yerine
+  // konuşan bir hata daha iyi.
+  if (!cand.length) throw new Error(`createSim(${seed}): başlangıç yurdu için aday hücre yok`);
   spots.push(cand[(rnd() * cand.length) | 0]);
   while (spots.length < NATION_DEFS.length && spots.length < cand.length) {
     let best = null, bestD = -1;
@@ -148,6 +154,9 @@ export function createSim(seed) {
     }
     spots.push(best);
   }
+  // Aday sayısı ulus sayısından azsa (aşırı denizli bir tohum) kalanlar
+  // adaylardan tekrar seçilir — eksik spots[i] doğrudan çökme demekti.
+  while (spots.length < NATION_DEFS.length) spots.push(cand[(rnd() * cand.length) | 0]);
 
   NATION_DEFS.forEach(([name, color], i) => {
     const nat = {
@@ -155,7 +164,9 @@ export function createSim(seed) {
       alive: true, ai: true,
       allies: new Set(), allySince: new Map(), lockUntil: 0,
       lastThink: rnd() * 2.5,
-      cx: spots[i].x, cy: spots[i].y,
+      // cx/cy toprağın ağırlık merkezi — yalnız çizim için, take() ile
+      // birlikte kayar. sumX/sumY o merkezin O(1) güncellenen birikimidir.
+      cx: spots[i].x, cy: spots[i].y, sumX: 0, sumY: 0,
     };
     sim.nations.push(nat);
     // R hücre yarıçapında yuvarlak bir başlangıç yurdu
@@ -164,7 +175,14 @@ export function createSim(seed) {
       if (dx * dx + dy * dy > R * R + 2) continue;
       const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1);
       const c = idx(cx, cy);
-      if (world.isLand[c] && owner[c] === -1) { owner[c] = i; nat.cells++; }
+      if (world.isLand[c] && owner[c] === -1) {
+        owner[c] = i; nat.cells++;
+        nat.sumX += cx; nat.sumY += cy;
+      }
+    }
+    if (nat.cells > 0) {
+      nat.cx = clamp(Math.round(nat.sumX / nat.cells), 0, W - 1);
+      nat.cy = clamp(Math.round(nat.sumY / nat.cells), 0, H - 1);
     }
     // Başlangıç askeri toprağa oranlı olmalı: sabit bir sayı, bedel ölçeği
     // değiştiğinde açılışı ölü doğurur (140 asker ≈ 5 hücre demekti).
@@ -255,7 +273,10 @@ export function breakAlliance(sim, breaker, other) {
   breaker.allies.delete(other.id); other.allies.delete(breaker.id);
   breaker.allySince.delete(other.id); other.allySince.delete(breaker.id);
   breaker.lockUntil = sim.realT + BETRAY_LOCK;
-  // bozanın o tarafa süren saldırıları da durur
+  // İhanet bozanın BÜTÜN seferlerini durdurur — yalnız karşı tarafa olanları
+  // değil. (Müttefike zaten saldırılamadığı için "o tarafa süren sefer" hiç
+  // var olamaz; kural fiilen "ihanet ettiğin an ordun evine döner"dir.)
+  // Kalan asker ve yarım kuşatma bitirSaldiri ile iade edilir.
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
     const at = sim.attacks[i];
     if (at.from === breaker.id) bitirSaldiri(sim, at);   // asker + kuşatma iade
@@ -325,6 +346,13 @@ export function frontCosts(sim, nat) {
 // oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
 export function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
+  // Aynı hedefe İKİNCİ sefer açılamaz. Cephe zaten hedefle paylaşılan bütün
+  // sınır hattıdır — ikinci sefer yeni bir yere yüklenmez, aynı hücrelerin
+  // `prog`unu paylaşır. Sonuç bozuk muhasebeydi: seferlerden biri kapanınca
+  // diğerinin kuşatma ilerlemesini haritadan siliyor ama `yatirim` alacağı
+  // duruyordu; iade sırasında yoktan asker üretiliyor, üstelik aynı askerle
+  // daha az toprak alınıyordu. Cepheyi büyütmek isteyen önce geri çağırmalı.
+  if (sim.attacks.some(a => a.from === nat.id && a.target === targetId)) return null;
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
 
@@ -363,12 +391,26 @@ export function cancelAttack(sim, atk) {
   bitirSaldiri(sim, atk);         // kalan asker ve yarım kuşatma iade edilir
 }
 
+// Ulusun ağırlık merkezi — YALNIZ çizim için (etiket ve ölüm efekti buraya
+// konur). Her hücre el değiştirişinde O(1) güncellenir: harita taramaya gerek
+// yok. Sabit bırakılırsa etiket başlangıç yurdunda çakılı kalıyor ve ulus
+// yayılınca toprağının onlarca hücre dışına düşüyordu.
+function moveCenter(nat, cell, dir) {
+  nat.sumX += (cell % W) * dir;
+  nat.sumY += ((cell / W) | 0) * dir;
+  if (nat.cells > 0) {
+    nat.cx = clamp(Math.round(nat.sumX / nat.cells), 0, W - 1);
+    nat.cy = clamp(Math.round(nat.sumY / nat.cells), 0, H - 1);
+  }
+}
+
 function take(sim, cell, nat) {
   if (!sim.world.isLand[cell]) return;      // deniz sahiplenilemez
   const o = sim.owner[cell];
   if (o >= 0) {
     const def = sim.nations[o];
     def.cells--;
+    moveCenter(def, cell, -1);
     // Tavan toprağa bağlı: küçülen ulusun askeri de yeni tavana kırpılmalı,
     // yoksa toprak kaybeden bir ulus tavanının üstünde asker taşır.
     if (def.pool > 0) def.pool = Math.min(def.pool, hardCap(sim, def));
@@ -379,6 +421,7 @@ function take(sim, cell, nat) {
   sim.prog[cell] = 0; sim.progBy[cell] = -1;
   sim.lastCapture[cell] = sim.t;
   nat.cells++;
+  moveCenter(nat, cell, +1);
   sim.dirty = true;
 }
 
@@ -407,6 +450,7 @@ function kill(sim, nat, dagil = false) {
     }
     nat.cells = 0;
     nat.pool = 0;
+    nat.sumX = 0; nat.sumY = 0;   // cx/cy son gerçek merkezde donar (ölüm efekti oraya)
     sim.dirty = true;
   }
   log(sim, `💀 ${nat.name} ${dagil ? 'dağıldı — toprakları sahipsiz' : 'tarihe karıştı'}`, 'death');

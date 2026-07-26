@@ -143,12 +143,31 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
     return String(n);
   }
 
+  // Etiketin çapası ulusun ağırlık merkezidir (nat.cx/cy — sim orayı toprakla
+  // birlikte kaydırır). İçbükey ya da parçalı bir ülkede merkez kendi
+  // toprağının dışına düşebilir; o zaman ada gibi duran bir isim çıkmasın diye
+  // merkeze en yakın KENDİ hücresine kaydırılır. Halka halka, seyrek örnekli
+  // arama: yalnız merkez yabancı toprağa düştüğünde çalışır.
+  function labelAnchor(nat) {
+    if (sim.owner[idx(nat.cx, nat.cy)] === nat.id) return { x: nat.cx, y: nat.cy };
+    for (let r = 3; r <= 90; r += 3) {
+      for (let a = 0; a < 24; a++) {
+        const t = a / 24 * Math.PI * 2;
+        const x = clamp(Math.round(nat.cx + Math.cos(t) * r), 0, W - 1);
+        const y = clamp(Math.round(nat.cy + Math.sin(t) * r), 0, H - 1);
+        if (sim.owner[idx(x, y)] === nat.id) return { x, y };
+      }
+    }
+    return { x: nat.cx, y: nat.cy };
+  }
+
   function paintLabels() {
     mctx.textAlign = 'center';
     mctx.textBaseline = 'middle';
     for (const nat of sim.nations) {
       if (!nat.alive || nat.cells < 45) continue;
-      const x = nat.cx * S, y = nat.cy * S;
+      const capa = labelAnchor(nat);
+      const x = capa.x * S, y = capa.y * S;
       const size = clamp(Math.sqrt(nat.cells) * 0.5, 11, 30);
 
       mctx.font = `bold ${size}px Georgia, serif`;

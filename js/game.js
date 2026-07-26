@@ -3,7 +3,7 @@
 
 import { W, H, S, idx, clamp } from './world.js';
 import {
-  createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
+  createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK, LEADER_FRAC,
   troopCap, power, landFrac, allied, locked, density,
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
@@ -658,9 +658,17 @@ function refreshDiplo() {
         }, `${BETRAY_LOCK} saniye hiçbir yere saldıramazsın`));
       } else {
         acts.appendChild(mkBtn('İttifak teklif et', '', () => {
-          const ok = power(sim, me) < power(sim, n) * 2 && landFrac(sim, me) < 0.35;
+          // Lider kuralı ÇİFT yönlü: kimse lidere yanaşmaz, kimse de lidere
+          // yanaşılmaz. Yalnız oyuncunun payına bakmak, oyuncunun kaçan
+          // liderle ittifak kurup haritayı kilitlemesine izin veriyordu —
+          // YZ'nin (aiThink) uyduğu kuralın tam tersi.
+          const lider = landFrac(sim, n) >= LEADER_FRAC;
+          const ok = !lider && landFrac(sim, me) < LEADER_FRAC
+            && power(sim, me) < power(sim, n) * 2;
           if (ok && formAlliance(sim, me, n)) sfx.ally();
-          else log(sim, `❌ ${n.name} ittifakı reddetti — fazla güçlüsün`, 'info');
+          else log(sim, lider
+            ? `❌ ${n.name} ittifakı reddetti — kıtanın lideri kimseyle anlaşmaz`
+            : `❌ ${n.name} ittifakı reddetti — fazla güçlüsün`, 'info');
           refreshDiplo();
         }));
       }
@@ -751,6 +759,9 @@ function start(id) {
   sim.playerId = id;
   sim.nations[id].ai = false;
   ui.lastCells = sim.nations[id].cells;
+  // Başlangıç yurdu FETHEDİLMİŞ sayılmamalı: sonCells 0'da bırakılınca bitiş
+  // ekranı daha ilk karede bütün başlangıç toprağını "fethedilen"e yazıyordu.
+  ui.sonCells = sim.nations[id].cells;
   ui.shownTroops = sim.nations[id].pool;
   ui.shownLand = landFrac(sim, sim.nations[id]);
   $('start-screen').classList.add('hidden');

@@ -74,6 +74,12 @@ check('üst çubuk oyuncuyu gösteriyor',
   (await page.textContent('#tb-nation')).trim() === 'Osmanlı');
 check('başlangıçta yurda yakınlaşılmış',
   await page.evaluate(() => window.__rb.view.scale > 1.2));
+// Başlangıç yurdu FETHEDİLMİŞ sayılmamalı: sonCells 0'da bırakılınca bitiş
+// ekranı daha ilk karede bütün başlangıç toprağını "fethedilen"e yazıyordu.
+check('başlangıç toprağı fethedilmiş sayılmıyor', await page.evaluate(() => {
+  const { ui } = window.__rb;
+  return ui.fethedilen === 0;
+}), 'fethedilen: ' + await page.evaluate(() => window.__rb.ui.fethedilen));
 
 // ---------------------------------------------------------------- saldırı
 console.log('\nTıkla — sınır dalgası');
@@ -141,26 +147,36 @@ check('cephe göstergesi seferi listeliyor', await page.evaluate(() => {
   return /\d/.test(fr[0].querySelector('.tr').textContent) && !!bar;
 }));
 
-// Ek bir sefer açıp ONU geri çağır: süren asıl sefer bozulmasın, sonraki
-// yayılma ölçümü ayakta kalsın.
-check('göstergedeki ✕ seferi geri çağırıyor', await page.evaluate(async () => {
+// Süren seferi göstergedeki ✕ ile geri çağır, sonra aynı hedefe yeniden çık:
+// sonraki yayılma ölçümü ayakta kalsın. (Aynı hedefe ikinci cephe artık
+// açılmıyor — cephe zaten hedefle paylaşılan bütün sınır hattı.)
+const geriCagirma = await page.evaluate(async () => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
-  me.pool = api.hardCap(sim, me);
-  const ek = api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 2);
-  if (!ek) return false;
   window.__rb.ui.speed = 0;
   await new Promise(r => setTimeout(r, 140));
+  const ek = sim.attacks.find(a => a.from === me.id);
+  if (!ek) { window.__rb.ui.speed = 1; return { hata: 'süren sefer yok' }; }
+  const hedef = ek.target;
   const once = sim.attacks.filter(a => a.from === me.id).length;
   const b = [...document.querySelectorAll('#fronts-hud .x')]
     .find(x => +x.dataset.id === ek.id);
-  if (!b) { window.__rb.ui.speed = 1; return false; }
+  if (!b) { window.__rb.ui.speed = 1; return { hata: 'göstergede ✕ düğmesi yok' }; }
   b.click();
   await new Promise(r => setTimeout(r, 60));
   const sonra = sim.attacks.filter(a => a.from === me.id).length;
+  // seferi geri aç ki "sınır fiilen yayılıyor" ölçümü sürsün
+  me.pool = api.hardCap(sim, me);
+  const yeni = api.startAttack(sim, me, hedef, api.frontCost(sim, me, hedef) * 2);
   window.__rb.ui.speed = 1;
-  return sonra === once - 1 && !sim.attacks.includes(ek);
-}));
+  return { once, sonra, kapandi: !sim.attacks.includes(ek), yeniden: !!yeni };
+});
+check('göstergedeki ✕ seferi geri çağırıyor',
+  geriCagirma.sonra === geriCagirma.once - 1 && geriCagirma.kapandi,
+  JSON.stringify(geriCagirma));
+// Geri çağrılan cepheye yeniden çıkılabilmeli — engel yalnız AÇIK cephe için.
+check('geri çağrılan cepheye yeniden çıkılabiliyor',
+  geriCagirma.yeniden === true, JSON.stringify(geriCagirma));
 
 // Savaş cephesi 9 sn, tarafsız cephe 3.6 sn sürüyor; dalganın ilk halkayı
 // düşürmesi için yeterince bekle.
@@ -493,6 +509,33 @@ check('sayaçlar sıçramadan akıyor', await page.evaluate(async () => {
 }));
 
 // ---------------------------------------------------------------- bitiş
+// Lider kuralı ÇİFT yönlü olmalı — YZ zaten lidere yanaşmıyor (aiThink), ama
+// arayüz yalnız OYUNCUNUN payına bakıyordu: oyuncu kaçan liderle ittifak kurup
+// haritayı kilitleyebiliyordu.
+console.log('\nLider kuralı');
+const liderSonuc = await page.evaluate(async () => {
+  const { sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  const o = sim.nations.find(n => n.alive && n !== me && !me.allies.has(n.id));
+  if (!o) return { atlandi: true };
+  const yedek = o.cells;
+  o.cells = Math.round(sim.landCells * 0.5);        // kıtanın yarısı = lider
+  await new Promise(r => setTimeout(r, 700));       // refreshDiplo tazelesin
+  let tiklandi = false;
+  for (const row of document.querySelectorAll('#diplo .nat-row')) {
+    if (row.querySelector('.nm').textContent !== o.name) continue;
+    const b = [...row.querySelectorAll('button')].find(x => x.textContent.includes('teklif'));
+    if (b) { b.click(); tiklandi = true; }
+  }
+  const kuruldu = me.allies.has(o.id);
+  o.cells = yedek;                                   // simülasyonu geri al
+  me.allies.delete(o.id); o.allies.delete(me.id);
+  return { tiklandi, kuruldu, ad: o.name };
+});
+check('lider krallıkla ittifak kurulamıyor',
+  liderSonuc.atlandi || (liderSonuc.tiklandi && !liderSonuc.kuruldu),
+  JSON.stringify(liderSonuc));
+
 console.log('\nBitiş ekranı');
 await page.evaluate(() => { window.__rb.sim.over = true; window.__rb.sim.won = true; });
 await page.waitForTimeout(300);
