@@ -200,6 +200,71 @@ t('ele geçen hücrenin zamanı damgalanır (parlama için)', () => {
   assert(yeni > 0, 'hiç hücre damgalanmadı');
 });
 
+// Saldırı, hedefin bütün sınırından değil dokunulan noktadan girmeli —
+// oyunun tek yön kontrolü bu. Başlangıç yurdunun sınırı giriş yarıçapından
+// dar olduğu için ölçüm uzun ve düz bir sınır üzerinde yapılır.
+function genisSinirliSim() {
+  const s = fresh();
+  const nat = s.nations[0];
+  // 60 hücre boyunda, 6 hücre kalınlığında bir şerit boya
+  let bas = -1;
+  outer:
+  for (let y = 20; y < H - 20; y++) {
+    for (let x = 20; x < W - 80; x++) {
+      let ok = true;
+      for (let dy = 0; dy < 10 && ok; dy++)
+        for (let dx = 0; dx < 60; dx++)
+          if (!s.world.isLand[idx(x + dx, y + dy)]) { ok = false; break; }
+      if (ok) { bas = idx(x, y); break outer; }
+    }
+  }
+  if (bas < 0) return null;
+  const bx = bas % W, by = (bas / W) | 0;
+  for (const n of s.nations) n.cells = 0;
+  s.owner.fill(-1);
+  for (let dy = 0; dy < 6; dy++) for (let dx = 0; dx < 60; dx++) {
+    s.owner[idx(bx + dx, by + dy)] = nat.id; nat.cells++;
+  }
+  nat.pool = hardCap(s, nat);
+  return { s, nat, bx, by };
+}
+
+t('saldırı verilen giriş noktasından başlar', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat, bx, by } = g;
+  // şeridin sol ucundan gir
+  const atk = startAttack(s, nat, -1, nat.pool, bx + 2, by - 1);
+  assert(atk, 'saldırı başlamadı');
+  const enSag = Math.max(...atk.q.map(c => c % W));
+  assert(enSag < bx + 30,
+    `cephe şeridin sağ yarısına kadar uzanmış (x=${enSag}, giriş x=${bx + 2})`);
+});
+
+t('giriş noktası verilmezse bütün sınır cepheye girer', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat, bx, by } = g;
+  const hepsi = startAttack(s, nat, -1, nat.pool);
+  const n1 = hepsi.q.length;
+  cancelAttack(s, hepsi);
+  const nokta = startAttack(s, nat, -1, nat.pool, bx + 2, by - 1);
+  assert(nokta.q.length < n1,
+    `noktasal cephe daralmadı (${nokta.q.length} / ${n1})`);
+});
+
+t('farklı noktalara vurmak farklı cepheler açar', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat, bx, by } = g;
+  const A = startAttack(s, nat, -1, nat.pool * 0.3, bx + 2, by - 1);
+  cancelAttack(s, A);
+  const B = startAttack(s, nat, -1, nat.pool * 0.3, bx + 57, by - 1);
+  const setA = new Set(A.q);
+  const ortak = B.q.filter(c => setA.has(c)).length;
+  assert.equal(ortak, 0, `iki uçtan açılan cepheler ${ortak} hücrede örtüşüyor`);
+});
+
 // ---------------------------------------------------------------- deniz
 
 console.log('\nDeniz sınırı');

@@ -25,7 +25,7 @@ const renderer = createRenderer(sim, mapCanvas, fxCanvas);
 
 const ui = {
   speed: 1, started: false,
-  pct: 0.5,
+  pct: 0.38,
   hoverCell: -1, hoverOwner: undefined,
   now: 0,
   shake: 0,
@@ -263,10 +263,20 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
     return;
   }
-  const atk = startAttack(sim, me, target, commitOf(me));
+  // dokunulan hücre saldırının giriş noktası olur
+  const atk = startAttack(sim, me, target, commitOf(me), x, y);
   if (!atk) {
-    flash(sim.attacks.some(a => a.from === me.id && a.target === target)
-      ? 'Bu cephe zaten açık' : 'Yeterli asker yok ya da sınırın değmiyor');
+    // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
+    // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
+    let mesaj;
+    if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
+      mesaj = 'Bu cephe zaten açık';
+    } else if (commitOf(me) < attackCost(sim, target) && maxDebt(sim, me) > 0) {
+      mesaj = 'Hazinen yetmiyor — saldırı gücünü kırmızı bölgeye çekip borçlanabilirsin';
+    } else {
+      mesaj = 'Sınırın buraya değmiyor';
+    }
+    flash(mesaj);
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
   }
@@ -295,12 +305,21 @@ $('pct').addEventListener('input', e => {
 });
 $('pct').addEventListener('change', () => sfx.ui());
 
-// Kaydıraç, elindeki askerin değil GÖNDEREBİLECEĞİN TOPLAM GÜCÜN yüzdesi:
-// garnizon + borçlanabileceğin. Elindekinin yüzdesi olsaydı asker bitince
-// borçlanma kapasiten de sıfırlanırdı — oysa borç tavanı toprağa bağlı ve
-// hazine boşken saldırabilmek borcun bütün amacı.
+// Kaydıracın eğrisi bilerek küçük yatırımlara yatkın: alt uçta ince ayar var,
+// borç yalnız son dilimde başlar. Doğrusal olsaydı orta konumlar bile hazineyi
+// süpürür, oyun "biriktir–tek büyük vuruş"a dönerdi; amaç sık sık ufak
+// hamleler yapabilmek.
+const BORROW_AT = 0.88;               // bu konuma kadar garnizon, sonrası borç
+const CURVE = 1.8;                    // alt uca doğru kıvrım
+
+// Sefere sürülecek asker.
 function commitOf(me) {
-  return maxCommit(sim, me) * ui.pct;
+  const elde = Math.max(0, me.pool);
+  if (ui.pct <= BORROW_AT) {
+    return elde * Math.pow(ui.pct / BORROW_AT, CURVE);
+  }
+  const borcPayi = (ui.pct - BORROW_AT) / (1 - BORROW_AT);   // 0..1
+  return clamp(elde + maxDebt(sim, me) * borcPayi, 0, maxCommit(sim, me));
 }
 
 function refreshPct() {
@@ -312,11 +331,10 @@ function refreshPct() {
   $('pct-label').innerHTML =
     `<b>${fmt(troops)}</b> asker` +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
-  // Kaydıracın hangi noktadan sonra borca girdiğini şeridin üstünde göster;
-  // eşik hazinen değiştikçe kayar.
-  const esik = clamp(elde / Math.max(1, maxCommit(sim, me)) * 100, 0, 100);
+  // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
+  // hazineyle kayan bir eşik oynarken kestirilemez.
   const p = $('pct');
-  p.style.setProperty('--borrow-at', esik + '%');
+  p.style.setProperty('--borrow-at', (BORROW_AT * 100) + '%');
   p.classList.toggle('borrowing', borc > 0);
 }
 

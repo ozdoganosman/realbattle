@@ -64,6 +64,7 @@ const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırl
 const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
+const ENTRY_R = 9;                    // dokunulan noktadaki cephe yarıçapı (hücre)
 
 export function createSim(seed) {
   const world = createWorld(seed);
@@ -239,25 +240,45 @@ export function attackCost(sim, targetId) {
   return BASE_COST + density(sim.nations[targetId]) * DEF_K;
 }
 
-// Saldırı başlat: hedefin bize komşu bütün hücreleri cepheye girer,
-// sınır o yöne doğru düzgün bir dalga hâlinde ilerler.
-export function startAttack(sim, nat, targetId, troops) {
+// Saldırı başlat. Bir giriş noktası verilirse (oyuncunun dokunduğu yer),
+// cephe bütün sınır boyunca değil O NOKTADA açılır ve dalga oradan içeri
+// yayılır — nereden gireceğini seçmek oyunun tek yön kontrolü.
+// Nokta verilmezse eski davranış: bütün ortak sınır cepheye girer.
+export function startAttack(sim, nat, targetId, troops, entryX, entryY) {
   if (!canAttack(sim, nat, targetId)) return null;
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
   if (troops < cost) return null;                 // tek hücreye bile yetmiyor
 
-  const q = [];
-  const inQ = new Set();
+  // hedefin bize değen bütün hücreleri
+  const border = [];
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     if (sim.owner[c] !== targetId) continue;
     if (targetId < 0 && !sim.world.isLand[c]) continue;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) { q.push(c); inQ.add(c); break; }
+      if (sim.owner[n] === nat.id) { border.push(c); break; }
     }
   }
-  if (!q.length) return null;
+  if (!border.length) return null;
+
+  let q = border;
+  if (entryX !== undefined) {
+    // dokunulan yere en yakın sınır hücresini bul, cepheyi onun çevresiyle sınırla
+    let giris = border[0], enYakin = Infinity;
+    for (const c of border) {
+      const dx = (c % W) - entryX, dy = ((c / W) | 0) - entryY;
+      const d = dx * dx + dy * dy;
+      if (d < enYakin) { enYakin = d; giris = c; }
+    }
+    const gx = giris % W, gy = (giris / W) | 0;
+    q = border.filter(c => {
+      const dx = (c % W) - gx, dy = ((c / W) | 0) - gy;
+      return dx * dx + dy * dy <= ENTRY_R * ENTRY_R;
+    });
+    if (!q.length) q = [giris];
+  }
+  const inQ = new Set(q);
 
   nat.pool -= troops;
   // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
@@ -406,6 +427,20 @@ function neighbours(sim, nat) {
   return set;
 }
 
+// Hedefe değen kendi sınır hücrelerimizden birini seç (YZ'nin giriş noktası).
+function borderCellToward(sim, nat, targetId) {
+  const tmp = [];
+  const aday = [];
+  for (let c = 0; c < W * H; c += 3) {
+    if (sim.owner[c] !== nat.id) continue;
+    for (const n of nbs(c, tmp)) {
+      if (sim.world.isLand[n] && sim.owner[n] === targetId) { aday.push(n); break; }
+    }
+    if (aday.length > 40) break;
+  }
+  return aday.length ? aday[(sim.rnd() * aday.length) | 0] : null;
+}
+
 function aiThink(sim, nat) {
   const busy = sim.attacks.some(a => a.from === nat.id);
   const nb = neighbours(sim, nat);
@@ -442,7 +477,10 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35));
+  // YZ de rastgele bir sınır noktasından girsin — tek noktadan taarruz
+  const bcs = borderCellToward(sim, nat, best);
+  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35),
+    bcs ? bcs % W : undefined, bcs ? (bcs / W) | 0 : undefined);
 }
 
 // ------------------------------------------------------------------ ana adım

@@ -247,47 +247,50 @@ await page.screenshot({ path: path.join(OUT, '04b-dongu.png') });
 
 // ---------------------------------------------------------------- borç
 console.log('\nBorçlanma');
-// Hazine boşken de saldırabilmeli — eksik kısım borçlanılır.
-// Hızlı ekonomi hazineyi anında doldurduğu için ölçüm sırasında duraklat.
+// Borç KASITLI olmalı: normal konumlarda hazineden pay gider, borç yalnız
+// kaydıracın son diliminde (kırmızı bölge) başlar.
 await page.evaluate(() => { window.__rb.ui.speed = 0; });
-check('hazine boşken bile sefere asker çıkarılabiliyor', await page.evaluate(async () => {
-  const { sim, api } = window.__rb;
-  const me = sim.nations[sim.playerId];
-  me.pool = 0;
-  const p = document.getElementById('pct');
-  p.value = '50'; p.dispatchEvent(new Event('input'));
-  await new Promise(r => setTimeout(r, 60));
-  const yazi = document.getElementById('pct-label').textContent;
-  return /[1-9]/.test(yazi) && api.maxCommit(sim, me) > 0;
-}));
 
-check('hazine boşken kaydıraç borç uyarısı veriyor', await page.evaluate(async () => {
-  const p = document.getElementById('pct');
-  return document.querySelector('.pct-label .debt') !== null
-    && p.classList.contains('borrowing');
-}));
-
-check('hazine doluyken düşük oranda borç uyarısı yok', await page.evaluate(async () => {
+check('normal konumda borç yok', await page.evaluate(async () => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
   me.pool = api.hardCap(sim, me);
   const p = document.getElementById('pct');
-  p.value = '50'; p.dispatchEvent(new Event('input'));
+  p.value = '40'; p.dispatchEvent(new Event('input'));
   await new Promise(r => setTimeout(r, 60));
   return document.querySelector('.pct-label .debt') === null;
 }));
 
-check('borç eşiği kaydıraç üstünde işaretleniyor', await page.evaluate(() => {
-  const v = document.getElementById('pct').style.getPropertyValue('--borrow-at');
-  return /%$/.test(v) && parseFloat(v) > 0;
+check('kaydıraç kırmızı bölgede borç gösteriyor', await page.evaluate(async () => {
+  const p = document.getElementById('pct');
+  p.value = '97'; p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 60));
+  return document.querySelector('.pct-label .debt') !== null
+    && p.classList.contains('borrowing');
 }));
-await page.evaluate(() => { window.__rb.ui.speed = 1; });
 
-// Hızlı ekonomide gelir borcu bir iki tikte kapatıyor; borç arayüzünü
-// ölçerken oyunu duraklatıp durumu sabit tutmak gerekiyor. Düğmeye tıklamak
-// yerine hızı doğrudan ayarlıyoruz: oyun bitmişse bitiş ekranı tıklamayı
-// engelliyor ve test takılıyor.
-await page.evaluate(() => { window.__rb.ui.speed = 0; });
+check('düşük konum askerin küçük bir dilimini sürüyor', await page.evaluate(async () => {
+  const { sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  const p = document.getElementById('pct');
+  const oku = () => +document.getElementById('pct-label').textContent
+    .replace(/[^0-9]/g, '');
+  p.value = '30'; p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 40));
+  const dusuk = oku();
+  p.value = '80'; p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 40));
+  const yuksek = oku();
+  // eğri alt uçta yatık: %30 hazinenin dörtte birinden azını sürmeli
+  return dusuk < me.pool * 0.25 && yuksek > dusuk * 2;
+}));
+
+check('borç eşiği kaydıraç üstünde sabit işaretli', await page.evaluate(() => {
+  const v = document.getElementById('pct').style.getPropertyValue('--borrow-at');
+  return parseFloat(v) > 80 && parseFloat(v) < 95;
+}));
+
+// kırmızı bölgeden ateşlemek gerçekten borca sokmalı
 const debt = await page.evaluate(() => {
   const { sim, api } = window.__rb;
   const me = sim.nations[sim.playerId];
@@ -297,7 +300,7 @@ const debt = await page.evaluate(() => {
   api.startAttack(sim, me, -1, elde + api.maxDebt(sim, me) * 0.6);
   return { elde: Math.round(elde), sonra: Math.round(me.pool), borclu: me.pool < 0 };
 });
-check('borçlanarak elindekinden fazlasını sürebiliyorsun',
+check('kırmızı bölgede elindekinden fazlasını sürebiliyorsun',
   debt.borclu && debt.sonra < 0, JSON.stringify(debt));
 
 await page.waitForTimeout(300);
@@ -315,11 +318,14 @@ check('borçtayken tıklayarak saldırılamıyor', await page.evaluate(() => {
 }));
 await page.screenshot({ path: path.join(OUT, '05b-borc.png') });
 
-// borcu kapat ki kalan testler normal işlesin
+// borcu kapat ve kaydıracı varsayılana çek ki kalan testler normal işlesin
 await page.evaluate(() => {
   const { sim } = window.__rb;
   sim.nations[sim.playerId].pool = 500;
+  const p = document.getElementById('pct');
+  p.value = '38'; p.dispatchEvent(new Event('input'));
 });
+await page.evaluate(() => { window.__rb.ui.speed = 1; });
 
 // ---------------------------------------------------------------- his
 console.log('\nHissiyat katmanı');

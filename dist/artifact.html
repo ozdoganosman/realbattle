@@ -524,7 +524,7 @@ button.mini.bad:hover { background: #cc543b; }
 
       <div class="sec">
         <div class="sec-h">Saldırı Gücü</div>
-        <input id="pct" type="range" min="5" max="100" value="50">
+        <input id="pct" type="range" min="3" max="100" value="38">
         <div id="pct-label" class="pct-label"></div>
       </div>
 
@@ -550,9 +550,9 @@ button.mini.bad:hover { background: #cc543b; }
       <h1>RealBattle</h1>
       <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
       <div class="rules">
-        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — sınırın o tarafa doğru dalga hâlinde ilerler.</div>
+        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — sınırın <b>dokunduğun noktadan</b> içeri doğru dalga hâlinde ilerler.</div>
         <div><b>Asker bileşik büyür.</b> Mevcut askerin faiz getirir, toprağın ayrıca gelir. Biriktikçe hızlanır.</div>
-        <div><b>Borçlanabilirsin.</b> Kaydıraç, gönderebileceğin toplam gücün yüzdesi. Hazinen bitse de saldırabilirsin — eksik kısmı borçlanırsın, gelir borcu kapatana kadar yeni sefer yok.</div>
+        <div><b>Seri seri bas.</b> Kaydıraç alt uçta yatıktır — küçük hamleler ucuzdur. Borç yalnız <b>kırmızı bölgede</b> başlar; oraya çekersen hazinenden fazlasını sürersin ve borç kapanana kadar yeni sefer yok.</div>
         <div><b>Kalabalık ordu iyi savunur.</b> Askeri toprağına oranla yoğun olana saldırmak pahalıdır.</div>
         <div><b>İttifak kur.</b> Ama bozan <b>20 saniye</b> hiçbir yere saldıramaz.</div>
       </div>
@@ -871,6 +871,7 @@ const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırl
 const DEF_LOSS = 0.4;                 // savunan, alınan hücre başına kaybettiği
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
+const ENTRY_R = 9;                    // dokunulan noktadaki cephe yarıçapı (hücre)
 
 function createSim(seed) {
   const world = createWorld(seed);
@@ -1046,25 +1047,45 @@ function attackCost(sim, targetId) {
   return BASE_COST + density(sim.nations[targetId]) * DEF_K;
 }
 
-// Saldırı başlat: hedefin bize komşu bütün hücreleri cepheye girer,
-// sınır o yöne doğru düzgün bir dalga hâlinde ilerler.
-function startAttack(sim, nat, targetId, troops) {
+// Saldırı başlat. Bir giriş noktası verilirse (oyuncunun dokunduğu yer),
+// cephe bütün sınır boyunca değil O NOKTADA açılır ve dalga oradan içeri
+// yayılır — nereden gireceğini seçmek oyunun tek yön kontrolü.
+// Nokta verilmezse eski davranış: bütün ortak sınır cepheye girer.
+function startAttack(sim, nat, targetId, troops, entryX, entryY) {
   if (!canAttack(sim, nat, targetId)) return null;
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
   if (troops < cost) return null;                 // tek hücreye bile yetmiyor
 
-  const q = [];
-  const inQ = new Set();
+  // hedefin bize değen bütün hücreleri
+  const border = [];
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     if (sim.owner[c] !== targetId) continue;
     if (targetId < 0 && !sim.world.isLand[c]) continue;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) { q.push(c); inQ.add(c); break; }
+      if (sim.owner[n] === nat.id) { border.push(c); break; }
     }
   }
-  if (!q.length) return null;
+  if (!border.length) return null;
+
+  let q = border;
+  if (entryX !== undefined) {
+    // dokunulan yere en yakın sınır hücresini bul, cepheyi onun çevresiyle sınırla
+    let giris = border[0], enYakin = Infinity;
+    for (const c of border) {
+      const dx = (c % W) - entryX, dy = ((c / W) | 0) - entryY;
+      const d = dx * dx + dy * dy;
+      if (d < enYakin) { enYakin = d; giris = c; }
+    }
+    const gx = giris % W, gy = (giris / W) | 0;
+    q = border.filter(c => {
+      const dx = (c % W) - gx, dy = ((c / W) | 0) - gy;
+      return dx * dx + dy * dy <= ENTRY_R * ENTRY_R;
+    });
+    if (!q.length) q = [giris];
+  }
+  const inQ = new Set(q);
 
   nat.pool -= troops;
   // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
@@ -1213,6 +1234,20 @@ function neighbours(sim, nat) {
   return set;
 }
 
+// Hedefe değen kendi sınır hücrelerimizden birini seç (YZ'nin giriş noktası).
+function borderCellToward(sim, nat, targetId) {
+  const tmp = [];
+  const aday = [];
+  for (let c = 0; c < W * H; c += 3) {
+    if (sim.owner[c] !== nat.id) continue;
+    for (const n of nbs(c, tmp)) {
+      if (sim.world.isLand[n] && sim.owner[n] === targetId) { aday.push(n); break; }
+    }
+    if (aday.length > 40) break;
+  }
+  return aday.length ? aday[(sim.rnd() * aday.length) | 0] : null;
+}
+
 function aiThink(sim, nat) {
   const busy = sim.attacks.some(a => a.from === nat.id);
   const nb = neighbours(sim, nat);
@@ -1249,7 +1284,10 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35));
+  // YZ de rastgele bir sınır noktasından girsin — tek noktadan taarruz
+  const bcs = borderCellToward(sim, nat, best);
+  startAttack(sim, nat, best, nat.pool * (0.5 + sim.rnd() * 0.35),
+    bcs ? bcs % W : undefined, bcs ? (bcs / W) | 0 : undefined);
 }
 
 // ------------------------------------------------------------------ ana adım
@@ -1521,7 +1559,7 @@ const renderer = createRenderer(sim, mapCanvas, fxCanvas);
 
 const ui = {
   speed: 1, started: false,
-  pct: 0.5,
+  pct: 0.38,
   hoverCell: -1, hoverOwner: undefined,
   now: 0,
   shake: 0,
@@ -1759,10 +1797,20 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
     return;
   }
-  const atk = startAttack(sim, me, target, commitOf(me));
+  // dokunulan hücre saldırının giriş noktası olur
+  const atk = startAttack(sim, me, target, commitOf(me), x, y);
   if (!atk) {
-    flash(sim.attacks.some(a => a.from === me.id && a.target === target)
-      ? 'Bu cephe zaten açık' : 'Yeterli asker yok ya da sınırın değmiyor');
+    // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
+    // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
+    let mesaj;
+    if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
+      mesaj = 'Bu cephe zaten açık';
+    } else if (commitOf(me) < attackCost(sim, target) && maxDebt(sim, me) > 0) {
+      mesaj = 'Hazinen yetmiyor — saldırı gücünü kırmızı bölgeye çekip borçlanabilirsin';
+    } else {
+      mesaj = 'Sınırın buraya değmiyor';
+    }
+    flash(mesaj);
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
   }
@@ -1791,12 +1839,21 @@ $('pct').addEventListener('input', e => {
 });
 $('pct').addEventListener('change', () => sfx.ui());
 
-// Kaydıraç, elindeki askerin değil GÖNDEREBİLECEĞİN TOPLAM GÜCÜN yüzdesi:
-// garnizon + borçlanabileceğin. Elindekinin yüzdesi olsaydı asker bitince
-// borçlanma kapasiten de sıfırlanırdı — oysa borç tavanı toprağa bağlı ve
-// hazine boşken saldırabilmek borcun bütün amacı.
+// Kaydıracın eğrisi bilerek küçük yatırımlara yatkın: alt uçta ince ayar var,
+// borç yalnız son dilimde başlar. Doğrusal olsaydı orta konumlar bile hazineyi
+// süpürür, oyun "biriktir–tek büyük vuruş"a dönerdi; amaç sık sık ufak
+// hamleler yapabilmek.
+const BORROW_AT = 0.88;               // bu konuma kadar garnizon, sonrası borç
+const CURVE = 1.8;                    // alt uca doğru kıvrım
+
+// Sefere sürülecek asker.
 function commitOf(me) {
-  return maxCommit(sim, me) * ui.pct;
+  const elde = Math.max(0, me.pool);
+  if (ui.pct <= BORROW_AT) {
+    return elde * Math.pow(ui.pct / BORROW_AT, CURVE);
+  }
+  const borcPayi = (ui.pct - BORROW_AT) / (1 - BORROW_AT);   // 0..1
+  return clamp(elde + maxDebt(sim, me) * borcPayi, 0, maxCommit(sim, me));
 }
 
 function refreshPct() {
@@ -1808,11 +1865,10 @@ function refreshPct() {
   $('pct-label').innerHTML =
     `<b>${fmt(troops)}</b> asker` +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
-  // Kaydıracın hangi noktadan sonra borca girdiğini şeridin üstünde göster;
-  // eşik hazinen değiştikçe kayar.
-  const esik = clamp(elde / Math.max(1, maxCommit(sim, me)) * 100, 0, 100);
+  // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
+  // hazineyle kayan bir eşik oynarken kestirilemez.
   const p = $('pct');
-  p.style.setProperty('--borrow-at', esik + '%');
+  p.style.setProperty('--borrow-at', (BORROW_AT * 100) + '%');
   p.classList.toggle('borrowing', borc > 0);
 }
 
