@@ -292,8 +292,8 @@ check('düşük konum askerin küçük bir dilimini sürüyor', await page.evalu
   const { sim } = window.__rb;
   const me = sim.nations[sim.playerId];
   const p = document.getElementById('pct');
-  const oku = () => +document.getElementById('pct-label').textContent
-    .replace(/[^0-9]/g, '');
+  const oku = () => +document.getElementById('pct-label')
+    .querySelector('b').textContent.replace(/[^0-9]/g, '');
   p.value = '30'; p.dispatchEvent(new Event('input'));
   await new Promise(r => setTimeout(r, 40));
   const dusuk = oku();
@@ -387,13 +387,14 @@ check('yazan asker ile giden asker aynı', await page.evaluate(async () => {
   me.lockUntil = 0;
   me.pool = api.hardCap(sim, me);
   const p = document.getElementById('pct');
-  p.value = '5'; p.dispatchEvent(new Event('input'));      // bilerek çok küçük
+  p.value = '20'; p.dispatchEvent(new Event('input'));     // bilerek küçük
   // cephe bedelleri 250ms önbellekli — tazelensin diye bekleyip tekrar tetikle
   await new Promise(r => setTimeout(r, 320));
   p.dispatchEvent(new Event('input'));
   await new Promise(r => setTimeout(r, 60));
-  const yazan = +document.getElementById('pct-label').textContent
-    .replace(/[^0-9]/g, '');
+  // sayı <b> içinde; etiketin geri kalanında da rakam var (cephe payı, borç)
+  const yazan = +document.getElementById('pct-label')
+    .querySelector('b').textContent.replace(/[^0-9]/g, '');
   // en ucuz cepheye saldır — etiketin dayandığı cephe bu
   const bedeller = api.frontCosts(sim, me);
   let hedef = null, enUcuz = Infinity;

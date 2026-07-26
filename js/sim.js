@@ -287,6 +287,36 @@ export function frontCosts(sim, nat) {
   return out;
 }
 
+// Bir halkayı uzamsal olarak sırala: yan yana hücreler arka arkaya gelsin.
+// Halka satır satır taranarak toplandığı için ham sırası haritada zıplıyor;
+// öyle bırakılırsa yarım kalan bir halka sınır boyunca dağınık benekler
+// bırakır. Zincir yürüyüşü bunu tek parça yaylara çevirir — köşegen de
+// bitişik sayılır ki yay köşelerde kopmasın.
+function siraya(hucreler) {
+  if (hucreler.length < 3) return hucreler;
+  const kalan = new Set(hucreler);
+  const out = [];
+  let c = hucreler[0];
+  while (kalan.size) {
+    if (c === undefined) c = kalan.values().next().value;
+    kalan.delete(c);
+    out.push(c);
+    const x = c % W, y = (c / W) | 0;
+    let sonraki;
+    for (let dy = -1; dy <= 1 && sonraki === undefined; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (kalan.has(n)) { sonraki = n; break; }
+      }
+    }
+    c = sonraki;
+  }
+  return out;
+}
+
 // Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
 // oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
 export function startAttack(sim, nat, targetId, troops) {
@@ -297,17 +327,13 @@ export function startAttack(sim, nat, targetId, troops) {
   const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  // Cephe tek parça ilerlediği için en küçük hamle "bütün sınır bir hücre
-  // içeri"dir. Kaydıraç daha azını söylüyorsa hamle boşa düşmesin diye tam bu
-  // en küçük hamleye yuvarlanır — ama kendiliğinden borçlandırmaz: tavan,
-  // hazinen ile zaten göze aldığın borcun büyüğüdür.
-  const enAz = border.length * cost;
-  if (troops < enAz) {
-    if (enAz > Math.max(nat.pool, troops)) return null;
-    troops = enAz;
-  }
+  // En küçük hamle TEK hücredir: kaydıraç istediği kadar ince dilinebilsin.
+  // Yarım kalan halka noktalı görünmesin diye halkalar uzamsal olarak
+  // sıralanıyor (bkz. siraya) — az asker sınırda dağınık benek değil, tek
+  // parça bir yay açar.
+  if (troops < cost) return null;
 
-  const layer = border;
+  const layer = siraya(border);
   const inQ = new Set(layer);
 
   nat.pool -= troops;
@@ -316,9 +342,7 @@ export function startAttack(sim, nat, targetId, troops) {
   const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    // acc bir HALKA borcu olarak başlar: ilk halka daha ilk adımda düşer,
-    // dokunuşun karşılığı anında görünür.
-    troops, start: troops, layer, inQ, acc: layer.length, rate,
+    troops, start: troops, layer, li: 0, next: [], inQ, acc: 0, rate,
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -368,42 +392,43 @@ function stepAttacks(sim, dt) {
     const nat = sim.nations[a.from];
     if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
 
-    // Dalga hücre hücre değil HALKA halka ilerler: sıradaki halkanın tamamı
-    // aynı anda düşer, böylece sınır her yerde aynı derinlikte kalır — dişli
-    // ya da noktalı bir cephe oluşmaz. Bir halkanın süresi hücre sayısıyla
-    // orantılıdır (acc, halka uzunluğunu doldurunca düşer), yani az askerle
-    // yapılan saldırı ince ama düzgün bir çizgi kadar ilerler.
+    // Dalga halka halka ilerler ama halkalar hücre hücre tüketilir: kaydıraç
+    // istediği kadar ince dilinebilsin diye yarım halka serbest. Halkalar
+    // uzamsal olarak sıralandığı için yarım kalan halka sınırda dağınık benek
+    // değil TEK PARÇA bir yay bırakır. Bir halkanın toplam süresi yine hücre
+    // sayısıyla orantılı, yani dolu bir cephe hep ~ATTACK_SECS'te kapanır.
     a.acc += a.rate * dt;
+    let butce = Math.floor(a.acc);
+    if (butce <= 0) continue;
+    a.acc -= butce;
 
-    while (a.layer.length && a.acc >= a.layer.length && a.troops > 0) {
-      const cost = attackCost(sim, a.target);
-      // Halka ya tamamen alınır ya hiç: yarım kalan halka sınırı noktalı
-      // bırakırdı. Yetmiyorsa sefer biter, kalan asker garnizona döner.
-      if (a.troops < a.layer.length * cost) { a.layer = []; break; }
-      a.acc -= a.layer.length;
-      const next = [];
-      for (const c of a.layer) {
-        if (sim.owner[c] !== a.target) continue;      // başkası kapmış
-        a.troops -= cost;
-        if (a.target >= 0) {
-          const def = sim.nations[a.target];
-          def.pool = Math.max(0, def.pool - cost * DEF_LOSS);
-        }
-        take(sim, c, nat);
-        a.lastX = c % W; a.lastY = (c / W) | 0;
-        for (const n of nbs(c, tmp)) {
-          // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
-          // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
-          // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
-          // ulus karaya doğru büyüyemez.
-          if (!sim.world.isLand[n]) continue;
-          if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); next.push(n); }
-        }
+    const cost = attackCost(sim, a.target);
+    while (butce-- > 0) {
+      if (a.li >= a.layer.length) {          // halka bitti, sıradakine geç
+        if (!a.next.length) { a.layer = []; break; }
+        a.layer = siraya(a.next); a.next = []; a.li = 0;
       }
-      a.layer = next;
+      const c = a.layer[a.li++];
+      if (sim.owner[c] !== a.target) continue;        // başkası kapmış
+      if (a.troops < cost) { a.troops = 0; break; }
+      a.troops -= cost;
+      if (a.target >= 0) {
+        const def = sim.nations[a.target];
+        def.pool = Math.max(0, def.pool - cost * DEF_LOSS);
+      }
+      take(sim, c, nat);
+      a.lastX = c % W; a.lastY = (c / W) | 0;
+      for (const n of nbs(c, tmp)) {
+        // Deniz asla cepheye girmez. Tarafsız hedefte deniz de owner === -1
+        // olduğu için bu kontrol olmazsa dalga okyanusa akar: görünmez
+        // hücreler ele geçer, saldırı bütçesi orada erir ve kıyıda başlayan
+        // ulus karaya doğru büyüyemez.
+        if (!sim.world.isLand[n]) continue;
+        if (sim.owner[n] === a.target && !a.inQ.has(n)) { a.inQ.add(n); a.next.push(n); }
+      }
     }
 
-    if (a.troops <= 0 || !a.layer.length) {
+    if (a.troops <= 0 || (a.li >= a.layer.length && !a.next.length)) {
       if (a.troops > 0) deposit(sim, nat, a.troops); // cephe bitti, kalan geri döner
       sim.attacks.splice(i, 1);
     }
@@ -500,7 +525,14 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  startAttack(sim, nat, best, nat.pool * (0.85 + sim.rnd() * 0.15));
+  // Oyuncu istediği kadar ince dilebilir ama YZ'nin yarım hamle yapması işe
+  // yaramıyor: cepheyi kapatmayan saldırı sınırı tırtıklaştırıp bir sonraki
+  // hamleyi pahalandırıyor, savaşlar sonuçsuz kalıyordu. Bu yüzden YZ hep en
+  // az bir halkalık asker sürer — yetmiyorsa hiç çıkmaz, birikmeyi bekler.
+  const enAz = frontCost(sim, nat, best);
+  const pay = nat.pool * (0.45 + sim.rnd() * 0.25);
+  if (enAz > nat.pool) return;
+  startAttack(sim, nat, best, Math.max(pay, enAz));
 }
 
 // ------------------------------------------------------------------ ana adım

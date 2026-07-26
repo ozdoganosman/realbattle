@@ -274,10 +274,9 @@ function tapAttack(sx, sy) {
     let mesaj;
     if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
       mesaj = 'Bu cephe zaten açık';
-    } else if (frontCost(sim, me, target) > 0) {
-      // En küçük hamle bütün cepheyi bir hücre itmektir; ona bile yetmiyor.
-      mesaj = `Bu cepheyi itmek için ${fmt(frontCost(sim, me, target))} asker gerek `
-            + '— gücü kırmızı bölgeye çekip borçlanabilirsin';
+    } else if (commitOf(me) < attackCost(sim, target)) {
+      mesaj = `Tek hücre bile ${fmt(attackCost(sim, target))} askere geliyor `
+            + '— saldırı gücünü yükselt';
     } else {
       mesaj = 'Sınırın buraya değmiyor';
     }
@@ -285,10 +284,6 @@ function tapAttack(sx, sy) {
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
   }
-  // Cephe tek parça ilerlediği için kaydıracın söylediği az miktar en küçük
-  // hamleye yuvarlanmış olabilir — ne gittiğini söyle.
-  if (atk.start > istenen * 1.05)
-    flash(`En küçük hamle bu cephede ${fmt(atk.start)} asker`);
   cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
   sfx.attack();
@@ -349,30 +344,31 @@ function frontMap() {
   return cepheler;
 }
 
-// Bir hedefe dokunulunca fiilen sürülecek asker — sim'deki yuvarlama kuralının
-// aynısı. Arayüzün söylediği sayı ile giden sayı ayrışmasın diye tek yerde.
+// Bir hedefe dokunulunca fiilen sürülecek asker. En küçük hamle tek hücre
+// olduğundan kaydıraç ne diyorsa o gider — arayüz artık yuvarlamıyor.
 function gidecek(me, target) {
   const istenen = commitOf(me);
-  const enAz = frontMap().get(target);
-  if (!enAz || istenen >= enAz) return istenen;
-  return enAz <= Math.max(me.pool, istenen) ? enAz : istenen;
+  return istenen >= attackCost(sim, target) ? istenen : 0;
 }
 
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
-  const istenen = commitOf(me);
-  // En ucuz komşu cephe: dokunulacak yer belli değilken gidecek asker en az bu.
-  let enUcuz = Infinity;
-  for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
-  const yuvarlandi = enUcuz < Infinity && enUcuz > istenen
-    && enUcuz <= Math.max(me.pool, istenen);
-  const troops = yuvarlandi ? enUcuz : istenen;
+  const troops = commitOf(me);
   const elde = Math.max(0, me.pool);
   const borc = Math.max(0, troops - elde);
+  // En ucuz komşu cephenin kaçta kaçını itebileceğin: kaydıracın etkisi
+  // "kaç asker"den çok "sınırın ne kadarı" olarak okunuyor.
+  let enUcuz = Infinity;
+  for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
+  let pay = '';
+  if (enUcuz < Infinity && enUcuz > 0) {
+    const k = troops / enUcuz;
+    pay = k >= 1 ? ` <span class="floor">· cepheyi ${k.toFixed(1)}× iter</span>`
+                 : ` <span class="floor">· cephenin %${Math.round(k * 100)}'i</span>`;
+  }
   $('pct-label').innerHTML =
-    `<b>${fmt(troops)}</b> asker` +
-    (yuvarlandi ? ' <span class="floor">· en küçük hamle</span>' : '') +
+    `<b>${fmt(troops)}</b> asker` + pay +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
   // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
   // hazineyle kayan bir eşik oynarken kestirilemez.
