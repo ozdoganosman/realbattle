@@ -1,0 +1,16 @@
+{
+  "name": "realbattle",
+  "version": "0.1.0",
+  "description": "Ortaçağ konseptli, yönlü ordu mekaniğine dayanan territorial fetih oyunu",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/static.mjs",
+    "test": "node test/sim.test.mjs",
+    "test:browser": "node test/browser.test.mjs",
+    "test:all": "npm run test && npm run test:browser"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
+  }
+}

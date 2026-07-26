@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RealBattle — 1444</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 6v11c0 7 5 11 12 13 7-2 12-6 12-13V6z' fill='%231f7a4d' stroke='%232b1f14' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="topbar">
+    <div class="tb-left">
+      <span id="tb-nation" class="tb-item"></span>
+      <span class="tb-item" title="Hazine">🪙 <b id="tb-gold">0</b></span>
+      <span class="tb-item" title="Garnizondaki asker / tavan">⚔️ <b id="tb-troops">0</b><span class="dim"> / <span id="tb-cap">0</span></span></span>
+      <span class="tb-item" title="Kıtanın yüzdesi">🏳️ <b id="tb-land">0%</b></span>
+      <span id="tb-lock" class="tb-item lock hidden"></span>
+    </div>
+    <div class="tb-mid"><span id="tb-date">Ocak 1444</span></div>
+    <div class="tb-right">
+      <button id="btn-pause" class="spd" title="Duraklat">❙❙</button>
+      <button id="btn-play" class="spd active" title="Normal">▶</button>
+      <button id="btn-fast" class="spd" title="Hızlı">▶▶</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="map-wrap">
+      <div id="stage">
+        <canvas id="map"></canvas>
+        <canvas id="fx"></canvas>
+      </div>
+      <div id="log"></div>
+      <div id="hint-bar">Kendi toprağından <b>bas–sürükle–bırak</b>: ordu o yöne fırlar.</div>
+    </div>
+
+    <div id="panel">
+      <div class="sec">
+        <div class="sec-h">Sefer Gücü</div>
+        <input id="pct" type="range" min="10" max="95" value="55">
+        <div id="pct-label" class="pct-label"></div>
+      </div>
+
+      <div class="sec" id="sec-inbox">
+        <div class="sec-h">Divan</div>
+        <div id="inbox"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h">Bölge</div>
+        <div id="region-info" class="dim-i">İncelemek için haritaya tıkla.</div>
+      </div>
+
+      <div class="sec grow">
+        <div class="sec-h">Krallıklar</div>
+        <div id="diplo"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="start-screen">
+    <div id="start-box">
+      <h1>RealBattle</h1>
+      <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
+      <div class="rules">
+        <div><b>Bas–sürükle–bırak.</b> Ordu sınır boyunca değil, fırlattığın yönde ilerler.</div>
+        <div><b>İlerledikçe erir.</b> Toprak kazanır ama her hücre asker yer; dağ ve kale pahalıdır.</div>
+        <div><b>Ordular çarpışır.</b> Karşılaşan iki ordu biri bitene kadar birbirini yer.</div>
+        <div><b>Kuşatılan cep yutulur.</b> Düşman toprağını tamamen sararsan tek lokmada alırsın.</div>
+        <div><b>İttifak kur, birlikte savaş.</b> Ama ittifakı bozan <b>20 saniye</b> hiç saldıramaz.</div>
+      </div>
+      <p class="goal">Kıtanın <b>%55</b>'ine hükmet.</p>
+      <div id="nation-list"></div>
+      <button id="btn-random">⚄ Rastgele Krallık</button>
+    </div>
+  </div>
+
+  <div id="end-screen" class="hidden">
+    <div id="end-box">
+      <h1 id="end-title"></h1>
+      <p id="end-desc"></p>
+      <button onclick="location.reload()">Yeniden Oyna</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>
