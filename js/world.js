@@ -5,7 +5,13 @@
 // Sadece harita gerçek bir ortaçağ haritası gibi dursun diye varlar.
 // Oyun kuralları yalnız kara/deniz ayrımını kullanır.
 
-export const W = 280, H = 172, S = 4;
+// Kıta 280×172'den büyütüldü: uluslar arasında daha çok yer, daha uzun
+// cepheler. S küçültülerek çizim boyutu yaklaşık aynı tutuldu.
+export const W = 400, H = 248, S = 3;
+// Üretim parametreleri eski ölçeğe göre yazılmıştı; SC ile birlikte büyüyorlar
+// ki kıtanın şekli ve şehir sıklığı aynı karakterde kalsın.
+const SC = W / 280;
+const SC2 = SC * SC;
 export const PLAINS = 0, FOREST = 1, MOUNT = 2;
 
 // arazi tipine göre renk parlaklığı — yalnız çizim için
@@ -59,7 +65,7 @@ export function createWorld(seed, opts = {}) {
 
   const isLand = new Uint8Array(W * H);
   const terrain = new Uint8Array(W * H);
-  const elev = blobField(rnd, 130, 8, 32);
+  const elev = blobField(rnd, Math.round(130 * SC2), 8 * SC, 32 * SC);
 
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const ex = clamp(Math.min(x, W - 1 - x) / (W * 0.12), 0, 1);
@@ -76,7 +82,7 @@ export function createWorld(seed, opts = {}) {
 
   // --- dekoratif arazi: dağlık sırtlar ve orman kuşakları ---
   const tMnt = quantile(elev, isLand, 0.12);
-  const forestF = blobField(rnd, 85, 6, 21);
+  const forestF = blobField(rnd, Math.round(85 * SC2), 6 * SC, 21 * SC);
   const tFor = quantile(forestF, isLand, 0.30);
   for (let i = 0; i < W * H; i++) {
     if (!isLand[i]) continue;
@@ -87,10 +93,11 @@ export function createWorld(seed, opts = {}) {
 
   // --- dekoratif şehirler: birbirinden uzak, isimli yerleşimler ---
   const cities = [];
-  const MIN_D2 = 8 * 8;
+  const MIN_D2 = (8 * SC) * (8 * SC);
   const land = [];
   for (let i = 0; i < W * H; i++) if (isLand[i]) land.push(i);
-  for (let tries = 0; tries < 9000 && cities.length < 210; tries++) {
+  const CITY_N = Math.round(210 * SC2);
+  for (let tries = 0; tries < 9000 * SC2 && cities.length < CITY_N; tries++) {
     const c = land[(rnd() * land.length) | 0];
     const x = c % W, y = (c / W) | 0;
     if (x < 3 || y < 3 || x > W - 4 || y > H - 4) continue;

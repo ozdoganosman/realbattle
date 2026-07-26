@@ -287,6 +287,7 @@ function tapAttack(sx, sy) {
   }
   cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
+  refreshFrontsHud();
   sfx.attack();
   ui.shake = Math.max(ui.shake, 5);
   refreshTop(); refreshFronts();
@@ -550,6 +551,58 @@ function refreshFronts() {
   }
 }
 
+// Harita üstünde, her zaman görünen cephe göstergesi. Panel açık mı kapalı mı,
+// telefonda mısın masaüstünde mi fark etmez: kime yükleniyorsun, kim sana
+// yükleniyor, halka ne kadar doldu, cephede kaç asker kaldı — hepsi burada.
+function frontRing(a) {
+  let t = 0, n = 0;
+  for (const c of a.layer) {
+    if (sim.progBy[c] !== a.from) continue;
+    t += sim.prog[c]; n++;
+  }
+  return n ? t / n : 0;
+}
+
+function refreshFrontsHud() {
+  const me = sim.nations[sim.playerId];
+  if (!me) return;
+  const el = $('fronts-hud');
+  const benim = sim.attacks.filter(a => a.from === me.id);
+  const bana = sim.attacks.filter(a => a.target === me.id);
+  const diger = sim.attacks.length - benim.length - bana.length;
+
+  if (!benim.length && !bana.length && !diger) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+
+  const satir = (a, saldiran, hedef, bize) => {
+    const halka = Math.round(frontRing(a) * 100);
+    const kalan = clamp(a.troops / a.start, 0, 1);
+    return `<div class="fr${bize ? ' at' : ''}">` +
+      `<div class="top"><span class="dot" style="background:${saldiran.color}"></span>` +
+      `<span class="nm">${bize ? '⚔ ' : '→ '}${hedef}</span>` +
+      `<b class="tr">${fmt(a.troops)}</b>` +
+      (bize ? '' : `<button class="x" data-id="${a.id}" title="Geri çağır">✕</button>`) +
+      '</div>' +
+      `<div class="bar"><i style="width:${halka}%;background:${saldiran.color}"></i></div>` +
+      `</div>`;
+  };
+
+  let html = '<div class="h">Cepheler</div>';
+  for (const a of benim)
+    html += satir(a, me, a.target < 0 ? 'Boş toprak' : sim.nations[a.target].name, false);
+  for (const a of bana)
+    html += satir(a, sim.nations[a.from], sim.nations[a.from].name, true);
+  if (diger > 0) html += `<div class="other">başka ${diger} cephe sürüyor</div>`;
+  el.innerHTML = html;
+
+  for (const b of el.querySelectorAll('.x')) {
+    b.onclick = () => {
+      const a = sim.attacks.find(x => x.id === +b.dataset.id);
+      if (a) { cancelAttack(sim, a); sfx.ui(); refreshFronts(); refreshFrontsHud(); refreshTop(); }
+    };
+  }
+}
+
 function refreshOffers() {
   const me = sim.nations[sim.playerId];
   const el = $('offers');
@@ -782,7 +835,7 @@ function frame(now) {
     refreshCycle(me, inDebt(me));
 
     uiTimer += realDt; diploTimer += realDt;
-    if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); }
+    if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); refreshFrontsHud(); }
     if (diploTimer > 0.5) {
       diploTimer = 0;
       refreshDiplo(); refreshOffers(); refreshFronts();

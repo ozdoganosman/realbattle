@@ -472,6 +472,51 @@ button.mini.bad:hover { background: #cc543b; }
 #end-stats span { color: var(--dim); text-align: right; }
 #end-stats b { text-align: left; }
 
+/* ------------------------------------------------- cephe göstergesi (harita üstü) */
+#fronts-hud {
+  position: absolute; right: 10px; top: 136px; z-index: 4;
+  width: 208px; max-width: 46vw;
+  background: rgba(18,12,6,.8); color: #f2e6c8;
+  border: 1px solid rgba(200,170,110,.38); border-radius: 9px;
+  padding: 7px 9px 8px; font-size: 12px;
+  backdrop-filter: blur(2px);
+}
+#fronts-hud .h {
+  font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase;
+  color: #bda57a; margin-bottom: 5px;
+}
+#fronts-hud .fr { margin-bottom: 6px; }
+#fronts-hud .fr:last-child { margin-bottom: 0; }
+#fronts-hud .top {
+  display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+  white-space: nowrap;
+}
+#fronts-hud .dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+#fronts-hud .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+#fronts-hud .tr {
+  font-variant-numeric: tabular-nums; color: #d8c69a; flex-shrink: 0;
+}
+#fronts-hud .x {
+  background: none; border: none; color: #e5a08c; cursor: pointer;
+  font-family: inherit; font-size: 13px; line-height: 1; padding: 0 1px;
+  flex-shrink: 0;
+}
+#fronts-hud .x:hover { color: #ff8f7a; }
+#fronts-hud .bar {
+  height: 4px; border-radius: 2px; background: rgba(255,240,205,.16); overflow: hidden;
+}
+#fronts-hud .bar i { display: block; height: 100%; border-radius: 2px; }
+#fronts-hud .fr.at .nm { color: #ffb9a6; }     /* sana yüklenen */
+#fronts-hud .other { color: #a08c66; font-size: 11px; margin-top: 5px; }
+
+@media (max-width: 860px) {
+  #fronts-hud {
+    top: 58px; right: 7px; width: 168px; font-size: 11px;
+    padding: 5px 7px 6px;
+  }
+  #fronts-hud .h { font-size: 9px; margin-bottom: 3px; }
+}
+
 </style>
 
 <div id="topbar">
@@ -497,6 +542,8 @@ button.mini.bad:hover { background: #cc543b; }
       </div>
       <div id="log"></div>
       <div id="target-chip" class="hidden"></div>
+      <!-- cephelerin durumu her zaman görünür: kim kime yükleniyor, halka ne kadar doldu -->
+      <div id="fronts-hud" class="hidden"></div>
       <div id="hint-bar">Saldırmak için düşman ya da boş toprağa <b>dokun</b>.</div>
       <div id="zoom-ctl">
         <button id="zoom-in" title="Yakınlaştır">+</button>
@@ -579,7 +626,7 @@ button.mini.bad:hover { background: #cc543b; }
         <div><b>Seri seri bas.</b> Kaydıraç alt uçta yatıktır — küçük hamleler ucuzdur. Borç yalnız <b>kırmızı bölgede</b> başlar; oraya çekersen hazinenden fazlasını sürersin ve borç kapanana kadar yeni sefer yok.</div>
         <div><b>Dolu hazine kaledir.</b> Bedel savunanın asker yoğunluğuyla <b>üstel</b> artar — dolu bir düşmanın hücresi boşunkinin 13 katına gelir. Çarpışmada iki taraf da erir ama saldıran daha çok verir; kale ancak kanata kanata çöker.</div>
         <div><b>Küçülen dağılır.</b> Bir krallık avuç içi kadar kalınca dağılır ve toprağı <b>sahipsiz</b> olur — kimse kırıntı kovalamaz.</div>
-        <div><b>İttifak kur.</b> Ama bozan <b>20 saniye</b> hiçbir yere saldıramaz.</div>
+        <div><b>İttifak kur.</b> Bozan <b>20 saniye</b> hiçbir yere saldıramaz. İttifaklar <b>45 saniyede</b> kendiliğinden düşer; kıtanın %35'ini aşan lidere ise kimse yanaşmaz.</div>
       </div>
       <p class="goal">Kıtanın <b>%60</b>'ına hükmet.</p>
       <div id="nation-list"></div>
@@ -615,7 +662,13 @@ button.mini.bad:hover { background: #cc543b; }
 // Sadece harita gerçek bir ortaçağ haritası gibi dursun diye varlar.
 // Oyun kuralları yalnız kara/deniz ayrımını kullanır.
 
-const W = 280, H = 172, S = 4;
+// Kıta 280×172'den büyütüldü: uluslar arasında daha çok yer, daha uzun
+// cepheler. S küçültülerek çizim boyutu yaklaşık aynı tutuldu.
+const W = 400, H = 248, S = 3;
+// Üretim parametreleri eski ölçeğe göre yazılmıştı; SC ile birlikte büyüyorlar
+// ki kıtanın şekli ve şehir sıklığı aynı karakterde kalsın.
+const SC = W / 280;
+const SC2 = SC * SC;
 const PLAINS = 0, FOREST = 1, MOUNT = 2;
 
 // arazi tipine göre renk parlaklığı — yalnız çizim için
@@ -669,7 +722,7 @@ function createWorld(seed, opts = {}) {
 
   const isLand = new Uint8Array(W * H);
   const terrain = new Uint8Array(W * H);
-  const elev = blobField(rnd, 130, 8, 32);
+  const elev = blobField(rnd, Math.round(130 * SC2), 8 * SC, 32 * SC);
 
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const ex = clamp(Math.min(x, W - 1 - x) / (W * 0.12), 0, 1);
@@ -686,7 +739,7 @@ function createWorld(seed, opts = {}) {
 
   // --- dekoratif arazi: dağlık sırtlar ve orman kuşakları ---
   const tMnt = quantile(elev, isLand, 0.12);
-  const forestF = blobField(rnd, 85, 6, 21);
+  const forestF = blobField(rnd, Math.round(85 * SC2), 6 * SC, 21 * SC);
   const tFor = quantile(forestF, isLand, 0.30);
   for (let i = 0; i < W * H; i++) {
     if (!isLand[i]) continue;
@@ -697,10 +750,11 @@ function createWorld(seed, opts = {}) {
 
   // --- dekoratif şehirler: birbirinden uzak, isimli yerleşimler ---
   const cities = [];
-  const MIN_D2 = 8 * 8;
+  const MIN_D2 = (8 * SC) * (8 * SC);
   const land = [];
   for (let i = 0; i < W * H; i++) if (isLand[i]) land.push(i);
-  for (let tries = 0; tries < 9000 && cities.length < 210; tries++) {
+  const CITY_N = Math.round(210 * SC2);
+  for (let tries = 0; tries < 9000 * SC2 && cities.length < CITY_N; tries++) {
     const c = land[(rnd() * land.length) | 0];
     const x = c % W, y = (c / W) | 0;
     if (x < 3 || y < 3 || x > W - 4 || y > H - 4) continue;
@@ -865,6 +919,14 @@ const NATION_DEFS = [
 
 const WIN_FRAC = 0.60;
 const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
+// İttifaklar SÜRELİDİR. Kalıcı olunca geç oyunda iki blok donuyor ve harita
+// kilitleniyordu: 24 tohumun 14'ünde lider %50-59'da takılıp kalıyordu.
+// Süre dolunca ittifak kendiliğinden düşer (ihanet sayılmaz, ceza yok) ve
+// cepheler yeniden açılır.
+const ALLY_SECS = 45;
+// Kıtanın bu kadarını tutan artık "lider"dir: kimse onunla ittifak kurmaz ve
+// gücü ne olursa olsun üstüne gidilebilir.
+const LEADER_FRAC = 0.35;
 
 // --- ekonomi (territorial.io modeli) ---
 // İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
@@ -921,7 +983,11 @@ const DEF_EXP = 1.15;
 // Kanamak yoğunluğunu düşürür, düşen yoğunluk hücreyi ucuzlatır — yani baskı
 // altındaki büyük ordu zamanla kırılır, ama bedeli saldıran öder.
 const DEF_LOSS = 0.75;
-const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
+// Dalganın hedeflenen süresi. Boş toprağa yayılmak hızlı olmalı — asıl olay
+// başka bir krallıkla çarpışmak, o yüzden savaş cephesi belirgin biçimde
+// daha uzun sürer: kuşatmayı izleyecek, karşılık verecek zaman olsun.
+const ATTACK_SECS = 3.6;              // tarafsız toprak
+const WAR_SECS = 9;                   // düşman toprağı
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 // Bir ulus bu kadar küçülünce dağılır: toprakları sahipsiz kalır. Kalan bir
 // iki hücrelik kırıntıya nişan almak imkânsız, haritayı da kirletiyor.
@@ -953,16 +1019,19 @@ function createSim(seed) {
   // başlangıç yurtları: birbirinden olabildiğince uzak
   const spots = [];
   const cand = [];
-  for (let y = 4; y < H - 4; y += 3) for (let x = 4; x < W - 4; x += 3) {
+  // Başlangıç yurdu ölçeği: harita büyüdükçe yurt da büyür, yoksa açılış
+  // kıtanın içinde kaybolur.
+  const R = Math.round(4 * (W / 280));
+  for (let y = R; y < H - R; y += 3) for (let x = R; x < W - R; x += 3) {
     const c = idx(x, y);
     if (!world.isLand[c]) continue;
     // kıyıya çok yakın olmasın ki başlangıç yurdu sıkışmasın
     let land = 0;
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const n = idx(clamp(x + dx, 0, W - 1), clamp(y + dy, 0, H - 1));
       if (world.isLand[n]) land++;
     }
-    if (land > 40) cand.push({ x, y });
+    if (land > (2 * R + 1) ** 2 * 0.82) cand.push({ x, y });
   }
   spots.push(cand[(rnd() * cand.length) | 0]);
   while (spots.length < NATION_DEFS.length && spots.length < cand.length) {
@@ -979,15 +1048,15 @@ function createSim(seed) {
     const nat = {
       id: i, name, color, pool: 0, cells: 0,
       alive: true, ai: true,
-      allies: new Set(), lockUntil: 0,
+      allies: new Set(), allySince: new Map(), lockUntil: 0,
       lastThink: rnd() * 2.5,
       cx: spots[i].x, cy: spots[i].y,
     };
     sim.nations.push(nat);
-    // 4 hücre yarıçapında yuvarlak bir başlangıç yurdu
+    // R hücre yarıçapında yuvarlak bir başlangıç yurdu
     const { x, y } = spots[i];
-    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
-      if (dx * dx + dy * dy > 18) continue;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R + 2) continue;
       const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1);
       const c = idx(cx, cy);
       if (world.isLand[c] && owner[c] === -1) { owner[c] = i; nat.cells++; }
@@ -1070,6 +1139,7 @@ const nbs = (c, out) => {
 function formAlliance(sim, a, b) {
   if (a === b || allied(a, b)) return false;
   a.allies.add(b.id); b.allies.add(a.id);
+  a.allySince.set(b.id, sim.t); b.allySince.set(a.id, sim.t);
   log(sim, `🤝 ${a.name} ve ${b.name} ittifak kurdu`, 'ally');
   return true;
 }
@@ -1078,6 +1148,7 @@ function formAlliance(sim, a, b) {
 function breakAlliance(sim, breaker, other) {
   if (!allied(breaker, other)) return false;
   breaker.allies.delete(other.id); other.allies.delete(breaker.id);
+  breaker.allySince.delete(other.id); other.allySince.delete(breaker.id);
   breaker.lockUntil = sim.realT + BETRAY_LOCK;
   // bozanın o tarafa süren saldırıları da durur
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
@@ -1171,7 +1242,8 @@ function startAttack(sim, nat, targetId, troops) {
   nat.pool -= troops;
   // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
   // ölçekten bağımsız olarak hep ~ATTACK_SECS sürer, yani izlenebilir kalır.
-  const rate = Math.max(RATE_MIN, (troops / cost) / ATTACK_SECS);
+  const sure = targetId < 0 ? ATTACK_SECS : WAR_SECS;
+  const rate = Math.max(RATE_MIN, (troops / cost) / sure);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
     troops, start: troops, layer, next: [], inQ, rate,
@@ -1211,8 +1283,11 @@ const minCells = sim => Math.max(10, Math.round(sim.landCells * MIN_CELLS));
 function kill(sim, nat, dagil = false) {
   if (!nat.alive) return;
   nat.alive = false;
-  for (const id of nat.allies) sim.nations[id].allies.delete(nat.id);
-  nat.allies.clear();
+  for (const id of nat.allies) {
+    sim.nations[id].allies.delete(nat.id);
+    sim.nations[id].allySince.delete(nat.id);
+  }
+  nat.allies.clear(); nat.allySince.clear();
   // Sefer listesinden ham splice DEĞİL: kuşatma izleri temizlensin.
   for (let i = sim.attacks.length - 1; i >= 0; i--)
     if (sim.attacks[i].from === nat.id) bitirSaldiri(sim, sim.attacks[i]);
@@ -1257,6 +1332,21 @@ function bitirSaldiri(sim, a) {
   if (nat.alive) deposit(sim, nat, Math.max(0, a.troops) + Math.max(0, a.yatirim));
   sim.attacks.splice(i, 1);
   sim.dirty = true;
+}
+
+// Süresi dolan ittifaklar kendiliğinden düşer — ihanet değil, sadece bitiş.
+function stepAlliances(sim) {
+  for (const nat of sim.nations) {
+    if (!nat.alive || !nat.allies.size) continue;
+    for (const id of [...nat.allies]) {
+      const bas = nat.allySince.get(id);
+      if (bas === undefined || sim.t - bas < ALLY_SECS) continue;
+      const o = sim.nations[id];
+      nat.allies.delete(id); nat.allySince.delete(id);
+      o.allies.delete(nat.id); o.allySince.delete(nat.id);
+      if (nat.id < id) log(sim, `📜 ${nat.name}–${o.name} ittifakının süresi doldu`, 'info');
+    }
+  }
 }
 
 function stepAttacks(sim, dt) {
@@ -1387,6 +1477,8 @@ function aiThink(sim, nat) {
       if (id < 0) continue;
       const o = sim.nations[id];
       if (!o.alive || allied(nat, o)) continue;
+      // Lidere yanaşma: onu korumak haritayı kilitliyor.
+      if (landFrac(sim, o) >= LEADER_FRAC) continue;
       if (power(sim, o) > power(sim, nat) * 1.3) {
         if (o.id === sim.playerId) sim.playerOffers.add(nat.id);
         else formAlliance(sim, nat, o);
@@ -1403,7 +1495,9 @@ function aiThink(sim, nat) {
     if (id >= 0) {
       const o = sim.nations[id];
       if (!o.alive || allied(nat, o)) continue;
-      if (power(sim, o) > power(sim, nat) * 1.5) continue;   // kendinden çok güçlüye girme
+      // Kendinden çok güçlüye girme — ama LİDER istisna: kıtanın üçte birini
+      // aşan birine herkes yüklenir, yoksa oyun kilitleniyor.
+      if (landFrac(sim, o) < LEADER_FRAC && power(sim, o) > power(sim, nat) * 1.5) continue;
     }
     // Asker başına kazanılan toprak. Büyük hedefi kırpma isteği ÇARPAN olarak
     // eklenir — toplama olsaydı bedel ölçeği değiştiğinde terimlerden biri
@@ -1432,6 +1526,7 @@ function step(sim, dt, realDt) {
   sim.realT += realDt;
 
   stepGrowth(sim, dt);
+  stepAlliances(sim);
   stepAttacks(sim, dt);
 
   for (const nat of sim.nations) {
@@ -1979,6 +2074,7 @@ function tapAttack(sx, sy) {
   }
   cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
+  refreshFrontsHud();
   sfx.attack();
   ui.shake = Math.max(ui.shake, 5);
   refreshTop(); refreshFronts();
@@ -2242,6 +2338,58 @@ function refreshFronts() {
   }
 }
 
+// Harita üstünde, her zaman görünen cephe göstergesi. Panel açık mı kapalı mı,
+// telefonda mısın masaüstünde mi fark etmez: kime yükleniyorsun, kim sana
+// yükleniyor, halka ne kadar doldu, cephede kaç asker kaldı — hepsi burada.
+function frontRing(a) {
+  let t = 0, n = 0;
+  for (const c of a.layer) {
+    if (sim.progBy[c] !== a.from) continue;
+    t += sim.prog[c]; n++;
+  }
+  return n ? t / n : 0;
+}
+
+function refreshFrontsHud() {
+  const me = sim.nations[sim.playerId];
+  if (!me) return;
+  const el = $('fronts-hud');
+  const benim = sim.attacks.filter(a => a.from === me.id);
+  const bana = sim.attacks.filter(a => a.target === me.id);
+  const diger = sim.attacks.length - benim.length - bana.length;
+
+  if (!benim.length && !bana.length && !diger) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+
+  const satir = (a, saldiran, hedef, bize) => {
+    const halka = Math.round(frontRing(a) * 100);
+    const kalan = clamp(a.troops / a.start, 0, 1);
+    return `<div class="fr${bize ? ' at' : ''}">` +
+      `<div class="top"><span class="dot" style="background:${saldiran.color}"></span>` +
+      `<span class="nm">${bize ? '⚔ ' : '→ '}${hedef}</span>` +
+      `<b class="tr">${fmt(a.troops)}</b>` +
+      (bize ? '' : `<button class="x" data-id="${a.id}" title="Geri çağır">✕</button>`) +
+      '</div>' +
+      `<div class="bar"><i style="width:${halka}%;background:${saldiran.color}"></i></div>` +
+      `</div>`;
+  };
+
+  let html = '<div class="h">Cepheler</div>';
+  for (const a of benim)
+    html += satir(a, me, a.target < 0 ? 'Boş toprak' : sim.nations[a.target].name, false);
+  for (const a of bana)
+    html += satir(a, sim.nations[a.from], sim.nations[a.from].name, true);
+  if (diger > 0) html += `<div class="other">başka ${diger} cephe sürüyor</div>`;
+  el.innerHTML = html;
+
+  for (const b of el.querySelectorAll('.x')) {
+    b.onclick = () => {
+      const a = sim.attacks.find(x => x.id === +b.dataset.id);
+      if (a) { cancelAttack(sim, a); sfx.ui(); refreshFronts(); refreshFrontsHud(); refreshTop(); }
+    };
+  }
+}
+
 function refreshOffers() {
   const me = sim.nations[sim.playerId];
   const el = $('offers');
@@ -2474,7 +2622,7 @@ function frame(now) {
     refreshCycle(me, inDebt(me));
 
     uiTimer += realDt; diploTimer += realDt;
-    if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); }
+    if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); refreshFrontsHud(); }
     if (diploTimer > 0.5) {
       diploTimer = 0;
       refreshDiplo(); refreshOffers(); refreshFronts();

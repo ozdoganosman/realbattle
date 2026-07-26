@@ -242,6 +242,14 @@ await page.screenshot({ path: path.join(OUT, 'm5-oyun.png') });
 
 // Telefonda çekmeceyi açmadan saldırı gücü ayarlanabilmeli — eskiden kaydıraç
 // yalnız panelde vardı, her hamle için çekmeceyi açmak gerekiyordu.
+check('cephe göstergesi telefonda da ekranda', await page.evaluate(() => {
+  const el = document.getElementById('fronts-hud');
+  if (el.classList.contains('hidden')) return true;    // hiç cephe yoksa sorun değil
+  const r = el.getBoundingClientRect();
+  return r.right <= window.innerWidth + 1 && r.left >= 0
+    && r.top >= 40 && r.bottom <= window.innerHeight;
+}));
+
 console.log('\nÖzet şerit');
 check('kapalı çekmecede saldırı gücü kaydıracı görünür', await page.evaluate(() => {
   const p = document.getElementById('mini-pct');

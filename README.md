@@ -14,6 +14,10 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 *bütün sınır hattı* aynı anda dalga hâlinde içeri ilerler. Kenar çubuğundaki
 *Saldırı Gücü* kaç asker göndereceğini belirler.
 
+Kıta **400×248** hücre (~57.500 kara hücresi). Boş toprağa yayılma hızlıdır
+(~3.6 sn) ama **başka bir krallıkla çarpışma 9 saniye sürer** — kuşatmayı
+izleyecek, karşılık verecek zaman olsun diye.
+
 | Mekanik | Nasıl işler |
 |---|---|
 | **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler ve bütçe halkanın bütün hücrelerine **eşit** dağıtılır: her hücrenin kuşatma ilerlemesi aynı anda, aynı hızda artar. Hücre ancak ilerlemesi dolunca el değiştirir, yani sınır her yerde birlikte hareket eder — sıra sıra tek hücre düşen fermuar ya da dağınık benek görüntüsü yok. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
@@ -26,7 +30,8 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 | **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
 | **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
-| **İttifak** | Müttefikler birbirine saldıramaz. Ama ittifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. |
+| **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
+| **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. |
 
 Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
@@ -39,6 +44,9 @@ haritası gibi dursun diye varlar.
 - Dar ekranda çekmece kapalıyken bile asker, faiz, gelir geri sayımı, hazine
   çubuğu, döngü göstergesi, süren sefer **ve saldırı gücü kaydıracı** görünür
   kalır — telefonda hamle yapmak için çekmeceyi açmaya gerek yok
+- Harita üstündeki **cephe göstergesi** her zaman açıktır: kime yükleniyorsun,
+  kim sana yükleniyor, halka ne kadar doldu, cephede kaç asker kaldı — ve ✕ ile
+  seferi oradan geri çağırabilirsin
 - Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
@@ -73,9 +81,9 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (70)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (47)
-npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (28)
+npm test               # başsız simülasyon (73)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (49)
+npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
 ```
 

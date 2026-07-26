@@ -470,3 +470,48 @@ button.mini.bad:hover { background: #cc543b; }
 }
 #end-stats span { color: var(--dim); text-align: right; }
 #end-stats b { text-align: left; }
+
+/* ------------------------------------------------- cephe göstergesi (harita üstü) */
+#fronts-hud {
+  position: absolute; right: 10px; top: 136px; z-index: 4;
+  width: 208px; max-width: 46vw;
+  background: rgba(18,12,6,.8); color: #f2e6c8;
+  border: 1px solid rgba(200,170,110,.38); border-radius: 9px;
+  padding: 7px 9px 8px; font-size: 12px;
+  backdrop-filter: blur(2px);
+}
+#fronts-hud .h {
+  font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase;
+  color: #bda57a; margin-bottom: 5px;
+}
+#fronts-hud .fr { margin-bottom: 6px; }
+#fronts-hud .fr:last-child { margin-bottom: 0; }
+#fronts-hud .top {
+  display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+  white-space: nowrap;
+}
+#fronts-hud .dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+#fronts-hud .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+#fronts-hud .tr {
+  font-variant-numeric: tabular-nums; color: #d8c69a; flex-shrink: 0;
+}
+#fronts-hud .x {
+  background: none; border: none; color: #e5a08c; cursor: pointer;
+  font-family: inherit; font-size: 13px; line-height: 1; padding: 0 1px;
+  flex-shrink: 0;
+}
+#fronts-hud .x:hover { color: #ff8f7a; }
+#fronts-hud .bar {
+  height: 4px; border-radius: 2px; background: rgba(255,240,205,.16); overflow: hidden;
+}
+#fronts-hud .bar i { display: block; height: 100%; border-radius: 2px; }
+#fronts-hud .fr.at .nm { color: #ffb9a6; }     /* sana yüklenen */
+#fronts-hud .other { color: #a08c66; font-size: 11px; margin-top: 5px; }
+
+@media (max-width: 860px) {
+  #fronts-hud {
+    top: 58px; right: 7px; width: 168px; font-size: 11px;
+    padding: 5px 7px 6px;
+  }
+  #fronts-hud .h { font-size: 9px; margin-bottom: 3px; }
+}

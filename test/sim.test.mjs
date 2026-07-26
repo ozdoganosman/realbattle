@@ -7,7 +7,7 @@ import {
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
-  incomePayout, INCOME_SCALE, frontCost, minCells,
+  incomePayout, INCOME_SCALE, frontCost, minCells, ALLY_SECS,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -529,6 +529,41 @@ t('aynı karede iki sefer kapanınca doğru olanlar silinir', () => {
   cancelAttack(s, a);
   assert(s.attacks.includes(b), 'yanlış sefer silindi');
   assert(!s.attacks.includes(a), 'iptal edilen sefer listede kaldı');
+});
+
+// İttifaklar kalıcı olunca geç oyunda iki blok donuyor ve harita kilitleniyor.
+// Süreli ittifak bu kilidi açıyor: 24 tohumda çözülme 10/24'ten 24/24'e çıktı.
+t('ittifakın süresi dolunca kendiliğinden düşer', () => {
+  const s = fresh();
+  const A = s.nations[0], B = s.nations[1];
+  assert(formAlliance(s, A, B));
+  for (let i = 0; i < ALLY_SECS * 30 - 60; i++) step(s, 1 / 30, 1 / 30);
+  assert(allied(A, B), 'ittifak erken düştü');
+  for (let i = 0; i < 120; i++) step(s, 1 / 30, 1 / 30);
+  assert(!allied(A, B), 'ittifakın süresi dolmadı');
+  assert(!allied(B, A), 'karşı tarafta ittifak kalmış');
+});
+
+t('süre dolunca ihanet cezası verilmez', () => {
+  const s = fresh();
+  const A = s.nations[0], B = s.nations[1];
+  formAlliance(s, A, B);
+  for (let i = 0; i < ALLY_SECS * 30 + 90; i++) step(s, 1 / 30, 1 / 30);
+  assert(!allied(A, B), 'ittifak düşmedi');
+  assert(!locked(s, A) && !locked(s, B), 'süre dolması ceza saydı');
+});
+
+t('lidere ittifak kurulmaz, gücü ne olursa olsun saldırılabilir', () => {
+  const s = fresh();
+  for (const n of s.nations) n.ai = true;
+  const lider = s.nations[1];
+  lider.cells = Math.round(s.landCells * 0.45);      // kıtanın yarısına yakın
+  lider.pool = hardCap(s, lider);
+  const kucuk = s.nations[2];
+  // YZ liderle ittifak kurmamalı
+  for (let i = 0; i < 900; i++) step(s, 1 / 30, 1 / 30);
+  assert(!allied(kucuk, lider) || lider.cells < s.landCells * 0.35,
+    'küçük ulus liderle ittifak kurdu');
 });
 
 // ---------------------------------------------------------------- deniz

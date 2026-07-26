@@ -131,6 +131,37 @@ check('tıklama sarsıntı tetikliyor', afterClick.shake > 0, `shake=${afterClic
 check('süren seferler paneli açıldı',
   !(await page.$eval('#sec-fronts', el => el.classList.contains('hidden'))));
 
+// Cephe göstergesi harita üstünde, panelden bağımsız olarak HER ZAMAN görünür.
+check('cephe göstergesi seferi listeliyor', await page.evaluate(() => {
+  const el = document.getElementById('fronts-hud');
+  if (el.classList.contains('hidden')) return false;
+  const fr = el.querySelectorAll('.fr');
+  if (!fr.length) return false;
+  const bar = fr[0].querySelector('.bar i');
+  return /\d/.test(fr[0].querySelector('.tr').textContent) && !!bar;
+}));
+
+// Ek bir sefer açıp ONU geri çağır: süren asıl sefer bozulmasın, sonraki
+// yayılma ölçümü ayakta kalsın.
+check('göstergedeki ✕ seferi geri çağırıyor', await page.evaluate(async () => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.pool = api.hardCap(sim, me);
+  const ek = api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 2);
+  if (!ek) return false;
+  window.__rb.ui.speed = 0;
+  await new Promise(r => setTimeout(r, 140));
+  const once = sim.attacks.filter(a => a.from === me.id).length;
+  const b = [...document.querySelectorAll('#fronts-hud .x')]
+    .find(x => +x.dataset.id === ek.id);
+  if (!b) { window.__rb.ui.speed = 1; return false; }
+  b.click();
+  await new Promise(r => setTimeout(r, 60));
+  const sonra = sim.attacks.filter(a => a.from === me.id).length;
+  window.__rb.ui.speed = 1;
+  return sonra === once - 1 && !sim.attacks.includes(ek);
+}));
+
 await page.waitForTimeout(1600);
 const spread = await info();
 check('sınır fiilen yayılıyor', spread.cells > before.cells,
