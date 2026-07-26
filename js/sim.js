@@ -20,8 +20,8 @@ export const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
 // INCOME_PERIOD'da toprağın kadar düz gelir. Faiz oranı toprak payıyla
 // yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
-const TICK = 0.56;                    // faiz periyodu (sn)
-const INCOME_PERIOD = 5.6;            // arazi geliri periyodu (sn)
+export const TICK = 0.56;             // faiz periyodu (sn)
+export const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
 const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
 const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
@@ -63,6 +63,7 @@ export function createSim(seed) {
     events: [], fx: [],                              // fx: arayüzün tükettiği anlık olaylar
     playerOffers: new Set(),
     landCells: world.landCells,
+    tickAcc: 0, tickNo: 0,            // faiz/gelir döngüsü — gösterge bunu okur
     dirty: true,
   };
 
@@ -320,22 +321,37 @@ function stepAttacks(sim, dt) {
 
 // ------------------------------------------------------------------ büyüme
 
+// Ödemeler KESİKLİ: her TICK'te faiz, her 10. tikte arazi geliri. Sürekli
+// akıtmak sayıyı yumuşak gösterir ama geri sayılacak bir an bırakmaz —
+// territorial.io'daki gibi belirli anlarda yatması hem doğru hem okunaklı.
 function stepGrowth(sim, dt) {
-  for (const nat of sim.nations) {
-    if (!nat.alive) continue;
-    if (nat.pool < 0) {
-      // Borçtayken faiz senin lehine değil aleyhine işler: borç büyür,
-      // gelen gelirin tamamı onu kapatmaya gider.
-      nat.pool *= Math.pow(1 + DEBT_RATE, dt / TICK);
-      nat.pool += nat.cells * (dt / INCOME_PERIOD);
-      if (nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
-    } else {
-      nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
-      nat.pool += nat.cells * (dt / INCOME_PERIOD);
-      nat.pool = Math.min(nat.pool, hardCap(sim, nat));
+  sim.tickAcc += dt;
+  while (sim.tickAcc >= TICK) {
+    sim.tickAcc -= TICK;
+    sim.tickNo++;
+    const income = sim.tickNo % TICKS_PER_INCOME === 0;
+
+    for (const nat of sim.nations) {
+      if (!nat.alive) continue;
+      const borcluydu = nat.pool < 0;
+      if (borcluydu) {
+        nat.pool *= 1 + DEBT_RATE;      // borç kendi faiziyle büyür
+      } else {
+        nat.pool *= 1 + interestRate(sim, nat);
+      }
+      if (income) nat.pool += nat.cells;
+      if (nat.pool > 0) nat.pool = Math.min(nat.pool, hardCap(sim, nat));
+      if (borcluydu && nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
     }
+    sim.fx.push({ tip: 'tick', income });
   }
 }
+
+// --- gösterge için ---
+export const tickProgress = sim => sim.tickAcc / TICK;
+export const tickIndex = sim => sim.tickNo % TICKS_PER_INCOME;
+export const ticksToIncome = sim => TICKS_PER_INCOME - (sim.tickNo % TICKS_PER_INCOME);
+export const secsToIncome = sim => ticksToIncome(sim) * TICK - sim.tickAcc;
 
 // ------------------------------------------------------------------ yapay zekâ
 

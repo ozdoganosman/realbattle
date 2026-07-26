@@ -200,6 +200,50 @@ check('cezalıyken tıklayarak saldırılamıyor', await page.evaluate(() => {
 }));
 await page.screenshot({ path: path.join(OUT, '05-ceza.png') });
 
+// ---------------------------------------------------------------- döngü
+console.log('\nFaiz/gelir göstergesi');
+check('10 haneli döngü göstergesi çizildi',
+  (await page.$$('#pips i')).length === 10);
+
+check('haneler zamanla doluyor', await page.evaluate(async () => {
+  const dolu = () => document.querySelectorAll('#pips i.on').length;
+  const a = dolu();
+  await new Promise(r => setTimeout(r, 1400));
+  const b = dolu();
+  return b !== a;                       // ya arttı ya döngü başa döndü
+}));
+
+check('geri sayım yazısı saniye gösteriyor',
+  /\d+[.,]\d+sn/.test(await page.textContent('#cycle-note')),
+  await page.textContent('#cycle-note'));
+
+check('geri sayım azalıyor', await page.evaluate(async () => {
+  const { secsToIncome, sim } = { sim: window.__rb.sim, secsToIncome: window.__rb.api.secsToIncome };
+  const a = secsToIncome(sim);
+  await new Promise(r => setTimeout(r, 200));
+  const b = secsToIncome(sim);
+  return b < a || b > a;                // azalır, döngü dönerse sıçrar
+}));
+
+check('gelir tam onuncu tikte yatıyor', await page.evaluate(async () => {
+  const { sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  sim.attacks.length = 0;
+  const hedef = sim.tickNo + (10 - sim.tickNo % 10);
+  let oncekiTik = sim.tickNo, artis = null, sonPool = me.pool;
+  const t0 = Date.now();
+  while (sim.tickNo < hedef && Date.now() - t0 < 12000) {
+    await new Promise(r => setTimeout(r, 30));
+    if (sim.tickNo > oncekiTik) {
+      artis = me.pool - sonPool;
+      oncekiTik = sim.tickNo; sonPool = me.pool;
+    }
+  }
+  // son tik gelir tikiydi: artış en az toprak kadar olmalı
+  return artis !== null && artis >= me.cells * 0.9;
+}));
+await page.screenshot({ path: path.join(OUT, '04b-dongu.png') });
+
 // ---------------------------------------------------------------- borç
 console.log('\nBorçlanma');
 check('kaydıraç %100ün ötesine gidebiliyor',

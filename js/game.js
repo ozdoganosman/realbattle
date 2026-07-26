@@ -6,6 +6,7 @@ import {
   createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
   troopCap, power, landFrac, allied, locked, density,
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
+  TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, log,
 } from './sim.js';
@@ -356,6 +357,34 @@ function refreshTreasury(me) {
   $('tb-troops').classList.toggle('debt', borclu);
 }
 
+// Faiz/gelir döngüsü göstergesi: 10 hane, her faiz tikinde biri dolar,
+// onuncusu dolunca arazi geliri yatar.
+const pipEls = [];
+function refreshCycle(me, borclu) {
+  const box = $('pips');
+  if (!pipEls.length) {
+    for (let i = 0; i < TICKS_PER_INCOME; i++) {
+      const p = document.createElement('i');
+      p.appendChild(document.createElement('b'));
+      box.appendChild(p);
+      pipEls.push(p);
+    }
+  }
+  const done = tickIndex(sim);
+  const prog = tickProgress(sim);
+  for (let i = 0; i < pipEls.length; i++) {
+    const p = pipEls[i];
+    const dolu = i < done;
+    p.classList.toggle('on', dolu);
+    p.classList.toggle('now', i === done);
+    p.firstChild.style.width = i === done ? (prog * 100) + '%' : dolu ? '100%' : '0%';
+  }
+  const kalan = secsToIncome(sim);
+  $('cycle-note').innerHTML = borclu
+    ? `<b>${fmt(me.cells)}</b> gelir <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
+    : `<b>+${fmt(me.cells)}</b> arazi geliri <b>${kalan.toFixed(1)}sn</b> sonra`;
+}
+
 function mkBtn(text, cls, fn, title) {
   const b = document.createElement('button');
   b.className = 'mini ' + cls;
@@ -469,6 +498,13 @@ function drainFx() {
       ui.shake = Math.max(ui.shake, 9);
     } else if (f.tip === 'betray' && f.nat !== sim.playerId) {
       sfx.betray();
+    } else if (f.tip === 'tick' && f.income) {
+      // arazi geliri yattı — görünür ve duyulur olsun
+      sfx.income();
+      const box = $('sec-treasury');
+      box.classList.remove('paid');
+      void box.offsetWidth;                 // animasyonu yeniden tetikle
+      box.classList.add('paid');
     }
   }
   sim.fx.length = 0;
@@ -571,6 +607,9 @@ function frame(now) {
     ui.shownTroops += (me.pool - ui.shownTroops) * k;
     ui.shownLand += (landFrac(sim, me) - ui.shownLand) * k;
 
+    // döngü göstergesi her karede — 0.08sn'lik arayüz turunda takılı görünürdü
+    refreshCycle(me, inDebt(me));
+
     uiTimer += realDt; diploTimer += realDt;
     if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); }
     if (diploTimer > 0.5) {
@@ -595,6 +634,7 @@ window.__rb = {
   api: {
     startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt,
+    tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },
 };
 

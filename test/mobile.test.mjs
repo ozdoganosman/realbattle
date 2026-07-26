@@ -192,10 +192,17 @@ await page.screenshot({ path: path.join(OUT, 'm4-saldiri.png') });
 
 // ---------------------------------------------------------------- gezinme
 console.log('\nHarita gezinme');
+// Görünüm kenara dayanmışsa o yöne kayamaz (kaydırma sınırı böyle çalışır),
+// bu yüzden tek yöne bakmak kararsız bir test olur — iki yönü de dene.
 const b2 = await info();
 await swipe({ x: 200, y: 400 }, { x: 120, y: 400 });
 await page.waitForTimeout(250);
-const a2 = await info();
+let a2 = await info();
+if (a2.tx === b2.tx) {
+  await swipe({ x: 120, y: 400 }, { x: 240, y: 400 });
+  await page.waitForTimeout(250);
+  a2 = await info();
+}
 check('parmağı sürükleyince harita kayıyor', a2.tx !== b2.tx, `tx ${b2.tx} → ${a2.tx}`);
 check('kaydırma sefer başlatmıyor', a2.fronts <= b2.fronts,
   `sefer ${b2.fronts} → ${a2.fronts}`);

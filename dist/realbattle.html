@@ -171,6 +171,34 @@ body {
 .econ b { font-weight: bold; }
 .econ b.stalled { color: var(--bad); }
 
+/* faiz/gelir döngüsü göstergesi */
+.cycle { margin-top: 10px; }
+.pips { display: flex; gap: 3px; margin-bottom: 5px; }
+.pips i {
+  flex: 1; height: 7px; border-radius: 2px;
+  background: #d6c39c; overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(90,70,35,.3);
+}
+.pips i b {
+  display: block; height: 100%; width: 0;
+  background: #a3814a; border-radius: 2px;
+}
+.pips i.on b { background: #8a6f3d; }
+.pips i.now { box-shadow: inset 0 1px 2px rgba(90,70,35,.3), 0 0 0 1px #a3814a; }
+/* onuncu hane gelir hanesi — dolunca ödeme yapılır */
+.pips i:last-child { background: #cdb27f; }
+.pips i:last-child b { background: var(--good); }
+.cycle-note {
+  font-size: 12.5px; color: var(--dim); text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cycle-note b { color: var(--ink); }
+#sec-treasury.paid { animation: payFlash .45s var(--ease); }
+@keyframes payFlash {
+  0% { background: rgba(120, 170, 90, .2); }
+  100% { background: transparent; }
+}
+
 /* saldırı gücü kaydıracı */
 #pct {
   width: 100%; height: 30px;
@@ -444,6 +472,10 @@ button.mini.bad:hover { background: #cc543b; }
           <span>Arazi geliri</span><b id="econ-inc">—</b>
           <span>Yumuşak tavan</span><b id="econ-soft">—</b>
         </div>
+        <div class="cycle">
+          <div id="pips" class="pips"></div>
+          <div id="cycle-note" class="cycle-note">—</div>
+        </div>
       </div>
 
       <div class="sec">
@@ -697,6 +729,12 @@ const sfx = {
     this.tone(520 + p * 460, 0.05, { type: 'square', gain: 0.1 + p * 0.09 });
   },
 
+  // arazi geliri yattı — 10 tikte bir
+  income() {
+    this.tone(784, 0.11, { type: 'triangle', gain: 0.22 });
+    this.tone(1047, 0.16, { type: 'triangle', gain: 0.18, delay: 0.07 });
+  },
+
   ally() {
     [523, 659, 784].forEach((f, i) =>
       this.tone(f, 0.3, { type: 'triangle', gain: 0.35, delay: i * 0.06 }));
@@ -745,8 +783,8 @@ const BETRAY_LOCK = 20;        // ihanet cezası — GERÇEK saniye
 // İki ayrı büyüme: her TICK'te mevcut askerin üstüne BİLEŞİK faiz, ve her
 // INCOME_PERIOD'da toprağın kadar düz gelir. Faiz oranı toprak payıyla
 // yükselir; yumuşak tavanı geçince doğrusal olarak sıfıra iner.
-const TICK = 0.56;                    // faiz periyodu (sn)
-const INCOME_PERIOD = 5.6;            // arazi geliri periyodu (sn)
+const TICK = 0.56;             // faiz periyodu (sn)
+const TICKS_PER_INCOME = 10;   // her 10 tikte bir arazi geliri (5.6 sn)
 const INTEREST_MIN = 0.010;           // çok az toprakta tik başına faiz
 const INTEREST_MAX = 0.026;           // bütün haritaya hükmederken
 // Tavan toprağın katı. Gelir 5.6 sn'de toprak kadar geldiğinden, faiz ancak
@@ -788,6 +826,7 @@ function createSim(seed) {
     events: [], fx: [],                              // fx: arayüzün tükettiği anlık olaylar
     playerOffers: new Set(),
     landCells: world.landCells,
+    tickAcc: 0, tickNo: 0,            // faiz/gelir döngüsü — gösterge bunu okur
     dirty: true,
   };
 
@@ -1045,22 +1084,37 @@ function stepAttacks(sim, dt) {
 
 // ------------------------------------------------------------------ büyüme
 
+// Ödemeler KESİKLİ: her TICK'te faiz, her 10. tikte arazi geliri. Sürekli
+// akıtmak sayıyı yumuşak gösterir ama geri sayılacak bir an bırakmaz —
+// territorial.io'daki gibi belirli anlarda yatması hem doğru hem okunaklı.
 function stepGrowth(sim, dt) {
-  for (const nat of sim.nations) {
-    if (!nat.alive) continue;
-    if (nat.pool < 0) {
-      // Borçtayken faiz senin lehine değil aleyhine işler: borç büyür,
-      // gelen gelirin tamamı onu kapatmaya gider.
-      nat.pool *= Math.pow(1 + DEBT_RATE, dt / TICK);
-      nat.pool += nat.cells * (dt / INCOME_PERIOD);
-      if (nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
-    } else {
-      nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
-      nat.pool += nat.cells * (dt / INCOME_PERIOD);
-      nat.pool = Math.min(nat.pool, hardCap(sim, nat));
+  sim.tickAcc += dt;
+  while (sim.tickAcc >= TICK) {
+    sim.tickAcc -= TICK;
+    sim.tickNo++;
+    const income = sim.tickNo % TICKS_PER_INCOME === 0;
+
+    for (const nat of sim.nations) {
+      if (!nat.alive) continue;
+      const borcluydu = nat.pool < 0;
+      if (borcluydu) {
+        nat.pool *= 1 + DEBT_RATE;      // borç kendi faiziyle büyür
+      } else {
+        nat.pool *= 1 + interestRate(sim, nat);
+      }
+      if (income) nat.pool += nat.cells;
+      if (nat.pool > 0) nat.pool = Math.min(nat.pool, hardCap(sim, nat));
+      if (borcluydu && nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
     }
+    sim.fx.push({ tip: 'tick', income });
   }
 }
+
+// --- gösterge için ---
+const tickProgress = sim => sim.tickAcc / TICK;
+const tickIndex = sim => sim.tickNo % TICKS_PER_INCOME;
+const ticksToIncome = sim => TICKS_PER_INCOME - (sim.tickNo % TICKS_PER_INCOME);
+const secsToIncome = sim => ticksToIncome(sim) * TICK - sim.tickAcc;
 
 // ------------------------------------------------------------------ yapay zekâ
 
@@ -1699,6 +1753,34 @@ function refreshTreasury(me) {
   $('tb-troops').classList.toggle('debt', borclu);
 }
 
+// Faiz/gelir döngüsü göstergesi: 10 hane, her faiz tikinde biri dolar,
+// onuncusu dolunca arazi geliri yatar.
+const pipEls = [];
+function refreshCycle(me, borclu) {
+  const box = $('pips');
+  if (!pipEls.length) {
+    for (let i = 0; i < TICKS_PER_INCOME; i++) {
+      const p = document.createElement('i');
+      p.appendChild(document.createElement('b'));
+      box.appendChild(p);
+      pipEls.push(p);
+    }
+  }
+  const done = tickIndex(sim);
+  const prog = tickProgress(sim);
+  for (let i = 0; i < pipEls.length; i++) {
+    const p = pipEls[i];
+    const dolu = i < done;
+    p.classList.toggle('on', dolu);
+    p.classList.toggle('now', i === done);
+    p.firstChild.style.width = i === done ? (prog * 100) + '%' : dolu ? '100%' : '0%';
+  }
+  const kalan = secsToIncome(sim);
+  $('cycle-note').innerHTML = borclu
+    ? `<b>${fmt(me.cells)}</b> gelir <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
+    : `<b>+${fmt(me.cells)}</b> arazi geliri <b>${kalan.toFixed(1)}sn</b> sonra`;
+}
+
 function mkBtn(text, cls, fn, title) {
   const b = document.createElement('button');
   b.className = 'mini ' + cls;
@@ -1812,6 +1894,13 @@ function drainFx() {
       ui.shake = Math.max(ui.shake, 9);
     } else if (f.tip === 'betray' && f.nat !== sim.playerId) {
       sfx.betray();
+    } else if (f.tip === 'tick' && f.income) {
+      // arazi geliri yattı — görünür ve duyulur olsun
+      sfx.income();
+      const box = $('sec-treasury');
+      box.classList.remove('paid');
+      void box.offsetWidth;                 // animasyonu yeniden tetikle
+      box.classList.add('paid');
     }
   }
   sim.fx.length = 0;
@@ -1914,6 +2003,9 @@ function frame(now) {
     ui.shownTroops += (me.pool - ui.shownTroops) * k;
     ui.shownLand += (landFrac(sim, me) - ui.shownLand) * k;
 
+    // döngü göstergesi her karede — 0.08sn'lik arayüz turunda takılı görünürdü
+    refreshCycle(me, inDebt(me));
+
     uiTimer += realDt; diploTimer += realDt;
     if (uiTimer > 0.08) { uiTimer = 0; refreshTop(); refreshLog(); }
     if (diploTimer > 0.5) {
@@ -1938,6 +2030,7 @@ window.__rb = {
   api: {
     startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt,
+    tickProgress, tickIndex, ticksToIncome, secsToIncome,
   },
 };
 

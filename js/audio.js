@@ -71,6 +71,12 @@ export const sfx = {
     this.tone(520 + p * 460, 0.05, { type: 'square', gain: 0.1 + p * 0.09 });
   },
 
+  // arazi geliri yattı — 10 tikte bir
+  income() {
+    this.tone(784, 0.11, { type: 'triangle', gain: 0.22 });
+    this.tone(1047, 0.16, { type: 'triangle', gain: 0.18, delay: 0.07 });
+  },
+
   ally() {
     [523, 659, 784].forEach((f, i) =>
       this.tone(f, 0.3, { type: 'triangle', gain: 0.35, delay: i * 0.06 }));

@@ -17,7 +17,7 @@ göndereceğini belirler.
 | Mekanik | Nasıl işler |
 |---|---|
 | **Sınır dalgası** | Saldırı, hedefin sana değen bütün sınırından başlar ve içeri doğru yayılır. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **Bileşik büyüme** | Askerin iki kaynaktan artar: her **0.56 sn**'de mevcut askerinin üstüne **bileşik faiz** (toprak payına göre %1.0–%2.6, açılışta 1.9 kat hızlı), ve her **5.6 sn**'de **toprağın kadar** düz gelir. |
+| **Bileşik büyüme** | Ödemeler kesikli: her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** (toprak payına göre %1.0–%2.6, açılışta 1.9 kat hızlı), her **10. tikte** (5.6 sn) **toprağın kadar** düz gelir. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın **40 katı**, sert tavan **60 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Borçlanma** | Saldırı gücünü **%100'ün ötesine** çekip elinde olmayanı sefere sürebilirsin; askerin eksiye düşer. Gelen gelirin tamamı borca gider, borç da kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
@@ -62,8 +62,8 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (47)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (36)
+npm test               # başsız simülasyon (50)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (41)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

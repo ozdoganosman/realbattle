@@ -6,6 +6,7 @@ import {
   formAlliance, breakAlliance, allied, locked, landFrac, troopCap,
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
+  TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -348,11 +349,58 @@ t('arazi geliri toprakla orantılı', () => {
     for (const n of s.nations) n.ai = false;
     const nat = s.nations[0];
     nat.cells = cells; nat.pool = 0;         // faiz 0 üzerinden çalışmaz
-    for (let i = 0; i < 112; i++) step(s, 0.05, 0.05);   // 5.6 sn = bir periyot
+    for (let i = 0; i < 130; i++) step(s, 0.05, 0.05);   // bir gelir döngüsünü aşar
     return nat.pool;
   };
   const az = mk(100), cok = mk(400);
+  assert(az > 0, 'hiç gelir yatmadı');
   assert(cok > az * 3, `100 toprak ${az.toFixed(0)}, 400 toprak ${cok.toFixed(0)}`);
+});
+
+t('ödemeler kesikli: gelir tam onuncu tikte yatıyor', () => {
+  const s = createSim(1);
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  nat.cells = 200; nat.pool = 0;             // faizi devre dışı bırak
+  const yatan = [];
+  let prev = 0;
+  for (let tik = 1; tik <= TICKS_PER_INCOME; tik++) {
+    while (s.tickNo < tik) step(s, 0.02, 0.02);
+    yatan.push(Math.round(nat.pool - prev));
+    prev = nat.pool;
+  }
+  // ilk dokuz tikte hiçbir şey yatmamalı, onuncuda toprak kadar
+  assert.deepEqual(yatan.slice(0, 9), new Array(9).fill(0),
+    `erken ödeme var: ${yatan.join(',')}`);
+  assert.equal(yatan[9], 200, `onuncu tikte ${yatan[9]} yattı, 200 beklendi`);
+});
+
+t('gösterge döngüyle tutarlı ilerliyor', () => {
+  const s = createSim(1);
+  for (const n of s.nations) n.ai = false;
+  assert.equal(tickIndex(s), 0);
+  assert.equal(ticksToIncome(s), TICKS_PER_INCOME);
+  const p0 = tickProgress(s);
+  step(s, TICK * 0.5, TICK * 0.5);
+  assert(tickProgress(s) > p0, 'tik ilerlemesi artmıyor');
+  assert(secsToIncome(s) > 0 && secsToIncome(s) <= TICKS_PER_INCOME * TICK,
+    `geri sayım aralık dışı: ${secsToIncome(s)}`);
+  // tam bir döngü sonunda başa dönmeli
+  while (s.tickNo < TICKS_PER_INCOME) step(s, 0.02, 0.02);
+  assert.equal(tickIndex(s), 0, 'döngü başa dönmedi');
+});
+
+t('gelir yatınca arayüz için olay üretiliyor', () => {
+  const s = createSim(1);
+  for (const n of s.nations) n.ai = false;
+  let gelirOlayi = 0, tikOlayi = 0;
+  while (s.tickNo < TICKS_PER_INCOME) {
+    step(s, 0.02, 0.02);
+    for (const f of s.fx) if (f.tip === 'tick') { tikOlayi++; if (f.income) gelirOlayi++; }
+    s.fx.length = 0;
+  }
+  assert.equal(tikOlayi, TICKS_PER_INCOME, `${tikOlayi} tik olayı`);
+  assert.equal(gelirOlayi, 1, `${gelirOlayi} gelir olayı`);
 });
 
 t('asker sert tavanı aşamaz', () => {
