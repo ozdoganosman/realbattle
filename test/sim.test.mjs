@@ -165,19 +165,33 @@ t('geri çağrılan seferin askeri garnizona döner', () => {
   assert(Math.abs(nat.pool - (dusuk + kalan)) < 1e-6, 'asker dönmedi');
 });
 
+// Hazinesi dolu bir düşman gerçek bir kaledir: bedel yoğunlukla üstel artar.
+t('bedel yoğunlukla üstel artar — kalabalık ordu kaledir', () => {
+  const s = fresh();
+  const n = s.nations[1];
+  n.cells = 400;
+  const bedel = (d) => { n.pool = d * 400; return attackCost(s, 1); };
+  const bos = bedel(0), yari = bedel(8), dolu = bedel(17);
+  // ikinci yarıdaki artış birincidekinden BÜYÜK olmalı (dışbükey eğri)
+  assert(dolu - yari > yari - bos,
+    `eğri doğrusal/içbükey: ${bos.toFixed(1)} → ${yari.toFixed(1)} → ${dolu.toFixed(1)}`);
+  assert(dolu > bos * 8, `dolu hazine yeterince caydırıcı değil (${(dolu/bos).toFixed(1)} kat)`);
+});
+
 t('kalabalık ordu daha pahalıya saldırılır', () => {
   const s = fresh();
   const zayif = s.nations[1], guclu = s.nations[2];
   // aynı toprak, biri neredeyse boş biri tavanına yakın dolu
   zayif.cells = 400; zayif.pool = 400;                  // yoğunluk 1
   guclu.cells = 400; guclu.pool = hardCap(s, guclu);    // yoğunluk 60
-  assert(attackCost(s, guclu.id) > attackCost(s, zayif.id) * 2,
+  // yoğunluk bedele ÜSTEL girdiği için fark katbekat olmalı
+  assert(attackCost(s, guclu.id) > attackCost(s, zayif.id) * 5,
     `${attackCost(s, zayif.id).toFixed(1)} vs ${attackCost(s, guclu.id).toFixed(1)}`);
 });
 
-// Savunan mücadele ettiği için erir: kaybettiği hücrenin bedeli kadar asker
-// gider. Kanadıkça yoğunluğu düşer, hücreleri ucuzlar.
-t('savunan, alınan hücrenin bedeli kadar asker kaybeder', () => {
+// Çarpışmada İKİ taraf da erir: saldıran hücrenin bedelini öder, savunan
+// bunun DEF_LOSS katını kaybeder — yani saldırının faturası daha ağırdır.
+t('çarpışmada iki taraf da erir, saldıran daha çok verir', () => {
   const s = fresh();
   const A = s.nations[0];
   let hedef = -1;
@@ -185,18 +199,21 @@ t('savunan, alınan hücrenin bedeli kadar asker kaybeder', () => {
   if (hedef < 0) return;
   const B = s.nations[hedef];
   B.pool = 40000;                          // tavana takılmasın diye bol asker
-  B.cells = Math.max(B.cells, 1);
-  const oncePool = B.pool, onceCells = B.cells;
-  const bedel = attackCost(s, hedef);
-  A.pool = 200000;
-  startAttack(s, A, hedef, 60000);
+  const onceB = B.pool, onceCells = B.cells;
+  A.pool = 400000;
+  const onceA = A.pool;
+  const atk = startAttack(s, A, hedef, 120000);
+  assert(atk, 'saldırı başlamadı');
   for (let i = 0; i < 30; i++) step(s, 1 / 30, 1 / 30);
   const alinan = onceCells - B.cells;
   assert(alinan > 0, 'hiç hücre alınmadı');
-  const kayip = oncePool - B.pool;
-  // en az alınan hücre × bedel kadar erimeli (tavan kırpması daha da düşürebilir)
-  assert(kayip >= alinan * bedel * 0.9,
-    `${alinan} hücre için yalnız ${kayip.toFixed(0)} asker eridi, ~${(alinan*bedel).toFixed(0)} beklendi`);
+  const savunanKaybi = onceB - B.pool;
+  // saldıranın harcadığı: cepheye sürdüğü eksi cephede kalan
+  const saldiraninKaybi = (onceA - A.pool) - atk.troops;
+  assert(savunanKaybi > 0, 'savunan hiç asker kaybetmedi');
+  assert(saldiraninKaybi > savunanKaybi * 1.15,
+    `saldıran ${saldiraninKaybi.toFixed(0)}, savunan ${savunanKaybi.toFixed(0)} kaybetti `
+    + '— saldıranın faturası daha ağır olmalı');
 });
 
 t('savunan da hücre başına asker kaybeder', () => {

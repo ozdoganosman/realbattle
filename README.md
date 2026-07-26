@@ -22,8 +22,8 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
 | **Borçlanma** | Borç bölgesi kaydıracın son diliminde (kırmızı) sabittir — oraya çekmeden borçlanmazsın. Hazinen bittiğinde de saldırabilirsin, ama bu bilinçli bir tercihtir: askerin eksiye düşer, gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
-| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
-| **Savunan da erir** | Savunan mücadele ettiği için kanar: kaybettiği her hücrenin **tam bedeli** kadar asker gider. Kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — baskı altındaki büyük ordu giderek daha kolay kırılır. |
+| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 2.5 askere gelir, hazinesi tıka basa dolu olanınki **32** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
+| **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
 | **İttifak** | Müttefikler birbirine saldıramaz. Ama ittifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. |
 
@@ -67,7 +67,7 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (61)
+npm test               # başsız simülasyon (62)
 npm run test:browser   # masaüstü tarayıcı, gerçek fare (43)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all

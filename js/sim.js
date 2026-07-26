@@ -60,13 +60,17 @@ const DEBT_RATE = 0.012;              // borcun tik başına büyümesi — bor�
 // Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
 // asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
 const NEUTRAL_COST = 25 * TROOP_SCALE / LAND_CHEAP;  // tarafsız hücrenin bedeli
-const BASE_COST = 22 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tabanı
+const BASE_COST = 14 * TROOP_SCALE / LAND_CHEAP;     // düşman hücresinin tabanı
 // Yoğunluk zaten asker ölçeğiyle küçüldüğü için burada yalnız ucuzlatma var.
 const DEF_K = 1.8 / LAND_CHEAP;       // savunanın asker yoğunluğunun ağırlığı
-// Savunan da mücadele ettiği için erir: alınan hücrenin bedeli kadar asker
-// kaybeder. Kanamak yoğunluğunu düşürür, düşen yoğunluk hücreyi ucuzlatır —
-// yani baskı altındaki büyük ordu giderek daha kolay kırılır.
-const DEF_LOSS = 1.0;
+// Yoğunluk bedele ÜSTEL girer: kalabalık ordu doğrusal değil, hızlanarak
+// pahalanır — dolu bir hazinenin üstüne yürümek gerçekten kaledir.
+const DEF_EXP = 1.15;
+// Çarpışmada iki taraf da erir ama saldıran daha çok verir: savunan, hücrenin
+// bedelinin bu kadarını kaybeder (1'in altı = saldıran daha pahalıya alır).
+// Kanamak yoğunluğunu düşürür, düşen yoğunluk hücreyi ucuzlatır — yani baskı
+// altındaki büyük ordu zamanla kırılır, ama bedeli saldıran öder.
+const DEF_LOSS = 0.75;
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 
@@ -241,7 +245,7 @@ export function canAttack(sim, nat, targetId) {
 // oyunun tek gerilim kaynağı bu: büyük ordu iyi savunur.
 export function attackCost(sim, targetId) {
   if (targetId < 0) return NEUTRAL_COST;
-  return BASE_COST + density(sim.nations[targetId]) * DEF_K;
+  return BASE_COST + Math.pow(density(sim.nations[targetId]), DEF_EXP) * DEF_K;
 }
 
 // Hedefin bize değen bütün hücreleri — cephenin ta kendisi.
