@@ -5,7 +5,7 @@ import {
   createSim, step, startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, allied, locked, landFrac, troopCap,
   density, power, BETRAY_LOCK, WIN_FRAC,
-  interestRate, softCap, hardCap,
+  interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -381,6 +381,93 @@ t('dalga ölçekten bağımsız olarak izlenebilir sürede akıyor', () => {
   if (kucuk === null || buyuk === null) return;
   assert(buyuk < kucuk * 4, `küçük ${kucuk.toFixed(1)}sn, büyük ${buyuk.toFixed(1)}sn`);
   console.log(`      → 400 asker ${kucuk.toFixed(1)}sn, 20000 asker ${buyuk.toFixed(1)}sn`);
+});
+
+// ---------------------------------------------------------------- borç
+
+console.log('\nBorçlanma');
+
+t('elindekinden fazlasını sefere sürebilirsin', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  const elde = nat.pool;
+  const a = startAttack(s, nat, -1, elde + maxDebt(s, nat) * 0.5);
+  assert(a, 'borçlu sefer başlamadı');
+  assert(a.troops > elde, `sürülen ${a.troops} ≤ elindeki ${elde}`);
+  assert(nat.pool < 0, `asker eksiye düşmedi: ${nat.pool}`);
+  assert(inDebt(nat));
+});
+
+t('borç tavanı aşılamaz', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  const tavan = maxCommit(s, nat);
+  const a = startAttack(s, nat, -1, tavan * 10);
+  assert(a.troops <= tavan + 1e-6, `${a.troops} > ${tavan}`);
+  assert(nat.pool >= -maxDebt(s, nat) - 1e-6, `borç tavanı aşıldı: ${nat.pool}`);
+});
+
+t('borçtayken yeni sefere çıkılamaz', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  startAttack(s, nat, -1, nat.pool + maxDebt(s, nat) * 0.6);
+  assert(inDebt(nat));
+  assert.equal(canAttack(s, nat, -1), false, 'borçluyken saldırabildi');
+  assert.equal(startAttack(s, nat, -1, 100), null);
+});
+
+t('gelen gelir borcu kapatır', () => {
+  const s = fresh();
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  startAttack(s, nat, -1, nat.pool + maxDebt(s, nat) * 0.5);
+  const borc = nat.pool;
+  assert(borc < 0);
+  for (let i = 0; i < 600; i++) step(s, 0.05, 0.05);
+  assert(nat.pool > borc, `borç azalmadı: ${borc.toFixed(0)} → ${nat.pool.toFixed(0)}`);
+});
+
+t('borç kendi faiziyle büyür — bedava kredi değil', () => {
+  const s = createSim(9);
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  nat.cells = 0;                       // gelir olmasın ki sadece faiz görünsün
+  nat.pool = -1000;
+  for (let i = 0; i < 200; i++) step(s, 0.05, 0.05);   // 10 sn
+  assert(nat.pool < -1000, `borç büyümedi: ${nat.pool.toFixed(1)}`);
+});
+
+t('borç kapanınca normal faize dönülür', () => {
+  const s = fresh();
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  startAttack(s, nat, -1, nat.pool + maxDebt(s, nat) * 0.35);
+  assert(inDebt(nat));
+  for (let i = 0; i < 4000 && inDebt(nat); i++) step(s, 0.05, 0.05);
+  assert(!inDebt(nat), `borç kapanmadı: ${nat.pool.toFixed(0)}`);
+  const once = nat.pool;
+  for (let i = 0; i < 200; i++) step(s, 0.05, 0.05);
+  assert(nat.pool > once, 'borç sonrası büyüme durmuş');
+});
+
+t('borçlu ulusun savunma bedeli tabanın altına inmez', () => {
+  const s = fresh();
+  const hedef = s.nations[1];
+  hedef.cells = 200; hedef.pool = 500;
+  const normal = attackCost(s, hedef.id);
+  hedef.pool = -5000;
+  const borclu = attackCost(s, hedef.id);
+  assert(borclu > 0 && borclu <= normal,
+    `borçluyken bedel ${borclu}, normalde ${normal}`);
+});
+
+t('borç tavanı toprakla büyür', () => {
+  const s = fresh();
+  const nat = s.nations[0];
+  nat.cells = 100;
+  const az = maxDebt(s, nat);
+  nat.cells = 1000;
+  assert(maxDebt(s, nat) > az * 5, 'borç tavanı toprakla artmıyor');
 });
 
 // ---------------------------------------------------------------- ittifak

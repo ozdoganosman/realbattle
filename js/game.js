@@ -5,7 +5,7 @@ import { W, H, S, idx, clamp } from './world.js';
 import {
   createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
   troopCap, power, landFrac, allied, locked, density,
-  softCap, hardCap, interestRate,
+  softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   startAttack, cancelAttack, canAttack, attackCost,
   formAlliance, breakAlliance, log,
 } from './sim.js';
@@ -256,7 +256,12 @@ function tapAttack(sx, sy) {
     sfx.ui();
     return;
   }
-  const atk = startAttack(sim, me, target, me.pool * ui.pct);
+  if (inDebt(me)) {
+    flash(`Borçlusun — ${fmt(-me.pool)} asker açığı kapanmadan sefere çıkamazsın`);
+    renderer.ripple(x, y, 'rgba(235,90,70,0.95)');
+    return;
+  }
+  const atk = startAttack(sim, me, target, commitOf(me));
   if (!atk) {
     flash(sim.attacks.some(a => a.from === me.id && a.target === target)
       ? 'Bu cephe zaten açık' : 'Yeterli asker yok ya da sınırın değmiyor');
@@ -288,11 +293,21 @@ $('pct').addEventListener('input', e => {
 });
 $('pct').addEventListener('change', () => sfx.ui());
 
+// Sefere sürülecek asker. %100'ün ötesi borçtur: elinde olmayanı sürersin,
+// asker eksiye düşer ve gelen gelir önce onu kapatır.
+function commitOf(me) {
+  return clamp(me.pool * ui.pct, 0, maxCommit(sim, me));
+}
+
 function refreshPct() {
   if (sim.playerId < 0) return;
   const me = sim.nations[sim.playerId];
+  const troops = commitOf(me);
+  const borc = Math.max(0, troops - Math.max(0, me.pool));
   $('pct-label').innerHTML =
-    `<b>%${Math.round(ui.pct * 100)}</b> &nbsp;→&nbsp; <b>${fmt(me.pool * ui.pct)}</b> asker`;
+    `<b>%${Math.round(ui.pct * 100)}</b> &nbsp;→&nbsp; <b>${fmt(troops)}</b> asker` +
+    (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
+  $('pct').classList.toggle('borrowing', borc > 0);
 }
 
 function refreshTop() {
@@ -316,14 +331,29 @@ function refreshTop() {
 // geliri ve tavana ne kadar kaldığını açıkça göster.
 function refreshTreasury(me) {
   const soft = softCap(sim, me), hard = hardCap(sim, me);
-  const r = interestRate(sim, me);
-  $('cap-fill').style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
-  $('cap-fill').style.background = me.color;
+  const borclu = inDebt(me);
+  const fill = $('cap-fill');
+  if (borclu) {
+    fill.style.width = clamp(-me.pool / maxDebt(sim, me) * 100, 0, 100) + '%';
+    fill.style.background = 'var(--bad)';
+    $('econ-int').textContent = 'borç büyüyor';
+    $('econ-int').className = 'stalled';
+  } else {
+    const r = interestRate(sim, me);
+    fill.style.width = clamp(ui.shownTroops / hard * 100, 0, 100) + '%';
+    fill.style.background = me.color;
+    $('econ-int').textContent = r > 0 ? `%${(r * 100).toFixed(2)} / tik` : 'durdu (tavan)';
+    $('econ-int').className = r > 0 ? '' : 'stalled';
+  }
   $('cap-soft').style.left = (soft / hard * 100) + '%';
-  $('econ-int').textContent = r > 0 ? `%${(r * 100).toFixed(2)} / tik` : 'durdu (tavan)';
-  $('econ-int').className = r > 0 ? '' : 'stalled';
-  $('econ-inc').textContent = `+${fmt(me.cells)} / 5.6sn`;
-  $('econ-soft').textContent = fmt(soft);
+  $('cap-soft').style.display = borclu ? 'none' : '';
+  $('econ-inc').textContent = borclu
+    ? `+${fmt(me.cells)} / 5.6sn → borca`
+    : `+${fmt(me.cells)} / 5.6sn`;
+  $('econ-soft').textContent = borclu
+    ? `borç ${fmt(-me.pool)} / ${fmt(maxDebt(sim, me))}`
+    : fmt(soft);
+  $('tb-troops').classList.toggle('debt', borclu);
 }
 
 function mkBtn(text, cls, fn, title) {
@@ -562,7 +592,10 @@ function frame(now) {
 
 window.__rb = {
   sim, ui, view, W, H, S, focusHome, fitStage, sfx,
-  api: { startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance, power },
+  api: {
+    startAttack, cancelAttack, canAttack, attackCost, formAlliance, breakAlliance,
+    power, maxDebt, maxCommit, inDebt,
+  },
 };
 
 buildStart();

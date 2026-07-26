@@ -185,6 +185,13 @@ body {
   background: #a3814a; border: 2px solid #5c4726; cursor: grab;
 }
 .pct-label { font-size: 15px; text-align: center; font-variant-numeric: tabular-nums; }
+.pct-label .debt { color: var(--bad); font-weight: bold; }
+/* %100'ü aşınca kaydıracın kendisi de uyarsın */
+#pct.borrowing::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #8a6f3d 0%, #8a6f3d 62%, var(--bad) 62%, #d4573d 100%);
+}
+#pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
+#tb-troops.debt { color: #ff8f7a; }
 
 /* süren seferler */
 .front {

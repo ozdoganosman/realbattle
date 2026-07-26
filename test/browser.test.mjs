@@ -200,6 +200,61 @@ check('cezalıyken tıklayarak saldırılamıyor', await page.evaluate(() => {
 }));
 await page.screenshot({ path: path.join(OUT, '05-ceza.png') });
 
+// ---------------------------------------------------------------- borç
+console.log('\nBorçlanma');
+check('kaydıraç %100ün ötesine gidebiliyor',
+  +(await page.$eval('#pct', el => el.max)) > 100);
+
+check('%100 üstünde borç miktarı yazıyor', await page.evaluate(async () => {
+  const p = document.getElementById('pct');
+  p.value = '140';
+  p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 60));
+  return document.querySelector('.pct-label .debt') !== null
+    && p.classList.contains('borrowing');
+}));
+
+check('%100 altında borç uyarısı yok', await page.evaluate(async () => {
+  const p = document.getElementById('pct');
+  p.value = '50';
+  p.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 60));
+  return document.querySelector('.pct-label .debt') === null;
+}));
+
+const debt = await page.evaluate(() => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.lockUntil = 0;
+  sim.attacks.length = 0;
+  const elde = me.pool;
+  api.startAttack(sim, me, -1, elde + api.maxDebt(sim, me) * 0.6);
+  return { elde: Math.round(elde), sonra: Math.round(me.pool), borclu: me.pool < 0 };
+});
+check('borçlanarak elindekinden fazlasını sürebiliyorsun',
+  debt.borclu && debt.sonra < 0, JSON.stringify(debt));
+
+await page.waitForTimeout(300);
+check('üst çubukta asker kırmızıya dönüyor',
+  await page.$eval('#tb-troops', el => el.classList.contains('debt')));
+check('hazine borcu gösteriyor',
+  (await page.textContent('#econ-soft')).includes('borç'));
+check('gelir borca gidiyor yazıyor',
+  (await page.textContent('#econ-inc')).includes('borca'));
+
+check('borçtayken tıklayarak saldırılamıyor', await page.evaluate(() => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  return api.canAttack(sim, me, -1) === false;
+}));
+await page.screenshot({ path: path.join(OUT, '05b-borc.png') });
+
+// borcu kapat ki kalan testler normal işlesin
+await page.evaluate(() => {
+  const { sim } = window.__rb;
+  sim.nations[sim.playerId].pool = 500;
+});
+
 // ---------------------------------------------------------------- his
 console.log('\nHissiyat katmanı');
 check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));

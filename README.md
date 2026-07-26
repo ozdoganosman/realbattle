@@ -16,8 +16,10 @@ göndereceğini belirler.
 
 | Mekanik | Nasıl işler |
 |---|---|
-| **Sınır dalgası** | Saldırı, hedefin sana değen bütün sınırından başlar ve içeri doğru yayılır. Kopuk toprak oluşmaz. |
-| **Asker toprakla büyür** | Ne kadar çok toprak, o kadar hızlı asker üretimi ve o kadar yüksek tavan. |
+| **Sınır dalgası** | Saldırı, hedefin sana değen bütün sınırından başlar ve içeri doğru yayılır. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
+| **Bileşik büyüme** | Askerin iki kaynaktan artar: her **0.56 sn**'de mevcut askerinin üstüne **bileşik faiz** (toprak payına göre %1.0–%2.6, açılışta 1.9 kat hızlı), ve her **5.6 sn**'de **toprağın kadar** düz gelir. |
+| **Tavanlar** | Yumuşak tavan toprağın **40 katı**, sert tavan **60 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
+| **Borçlanma** | Saldırı gücünü **%100'ün ötesine** çekip elinde olmayanı sefere sürebilirsin; askerin eksiye düşer. Gelen gelirin tamamı borca gider, borç da kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla artar. Az toprakta çok asker tutan zor lokmadır. |
 | **Savunan da erir** | Kaybedilen her hücre savunanın askerinden de götürür. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
@@ -60,8 +62,8 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (28)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (28)
+npm test               # başsız simülasyon (47)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (36)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all
 ```

@@ -33,6 +33,12 @@ const EARLY_BOOST = 1.9;              // açılışta faiz çarpanı
 const EARLY_SECS = 100;               // bu sürede 1'e iner
 const START_MULT = 9;                 // başlangıç askeri = toprak × bu
 
+// --- borçlanma ---
+// Elindekinden fazlasını sefere sürebilirsin; asker eksiye düşer. Gelen gelir
+// önce borcu kapatır, borç da kendi faiziyle büyür — bedava kredi değil.
+const DEBT_MULT = 10;                 // en fazla borç = toprak × bu
+const DEBT_RATE = 0.004;              // borcun tik başına büyümesi
+
 // --- saldırı dengesi ---
 // Boş toprak ucuz, savunulan toprak pahalı. Açılıştaki kapışma hızlı olmalı;
 // asıl zorluk yerleşmiş bir krallıktan toprak koparmak.
@@ -138,7 +144,13 @@ export function interestRate(sim, nat) {
   return r;
 }
 
-export function density(nat) { return nat.pool / Math.max(25, nat.cells); }
+// Borçtayken savunma yoğunluğu negatife düşmesin — bedel tabanın altına inmez.
+export function density(nat) { return Math.max(0, nat.pool) / Math.max(25, nat.cells); }
+
+export function maxDebt(sim, nat) { return nat.cells * DEBT_MULT; }
+export const inDebt = nat => nat.pool < 0;
+// Bir seferde sürebileceğin en yüksek asker: elindeki + borçlanabileceğin.
+export function maxCommit(sim, nat) { return nat.pool + maxDebt(sim, nat); }
 export function power(sim, nat) {
   let onFront = 0;
   for (const a of sim.attacks) if (a.from === nat.id) onFront += a.troops;
@@ -183,6 +195,7 @@ export function breakAlliance(sim, breaker, other) {
 
 export function canAttack(sim, nat, targetId) {
   if (!nat.alive || locked(sim, nat)) return false;
+  if (inDebt(nat)) return false;                  // borç kapanmadan yeni sefer yok
   if (targetId === nat.id) return false;
   if (targetId >= 0 && allied(nat, sim.nations[targetId])) return false;
   return true;
@@ -199,7 +212,7 @@ export function attackCost(sim, targetId) {
 // sınır o yöne doğru düzgün bir dalga hâlinde ilerler.
 export function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
-  troops = Math.min(troops, nat.pool);
+  troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
   if (troops < cost) return null;                 // tek hücreye bile yetmiyor
 
@@ -310,11 +323,17 @@ function stepAttacks(sim, dt) {
 function stepGrowth(sim, dt) {
   for (const nat of sim.nations) {
     if (!nat.alive) continue;
-    // 1) bileşik faiz — asker askeri doğurur
-    nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
-    // 2) arazi geliri — her periyotta toprağın kadar asker
-    nat.pool += nat.cells * (dt / INCOME_PERIOD);
-    nat.pool = clamp(nat.pool, 0, hardCap(sim, nat));
+    if (nat.pool < 0) {
+      // Borçtayken faiz senin lehine değil aleyhine işler: borç büyür,
+      // gelen gelirin tamamı onu kapatmaya gider.
+      nat.pool *= Math.pow(1 + DEBT_RATE, dt / TICK);
+      nat.pool += nat.cells * (dt / INCOME_PERIOD);
+      if (nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
+    } else {
+      nat.pool *= Math.pow(1 + interestRate(sim, nat), dt / TICK);
+      nat.pool += nat.cells * (dt / INCOME_PERIOD);
+      nat.pool = Math.min(nat.pool, hardCap(sim, nat));
+    }
   }
 }
 
