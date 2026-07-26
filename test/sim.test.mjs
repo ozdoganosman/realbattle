@@ -447,6 +447,90 @@ t('küçülen ulus dağılır, kırıntısı fatihe değil boşluğa gider', () 
   assert(sahipsiz > 0, 'dağılan ulusun toprağı hiç sahipsiz kalmadı');
 });
 
+// ------------------------------------------------------- sefer muhasebesi
+
+console.log('\nSefer muhasebesi');
+
+t('geri çağırma hazineyi tam olarak geri verir', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const once = nat.pool;
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 2);
+  for (let i = 0; i < 30; i++) step(s, 1 / 30, 1 / 30);   // yarım halka birikti
+  cancelAttack(s, a);
+  assert(Math.abs(nat.pool - once) < 1e-6,
+    `iade eksik/fazla: ${once.toFixed(2)} → ${nat.pool.toFixed(2)}`);
+});
+
+// Kuşatma ilerlerken savunanı kanatmak bedava hasar demekti: yarım kalan
+// kuşatma saldırana iade edilirken savunanın kaybı kalıcı oluyordu.
+t('hiç hücre alınmadan savunan kanamaz', () => {
+  const s = fresh();
+  const A = s.nations[0];
+  let hedef = -1;
+  for (let i = 1; i < s.nations.length; i++) if (findBorder(s, 0, i) >= 0) { hedef = i; break; }
+  if (hedef < 0) return;
+  const B = s.nations[hedef];
+  B.pool = 30000;
+  const onceB = B.pool, onceCells = B.cells;
+  A.pool = 1e6;
+  const a = startAttack(s, A, hedef, frontCost(s, A, hedef) * 2);
+  for (let i = 0; i < 20; i++) step(s, 1 / 30, 1 / 30);
+  if (B.cells !== onceCells) return;                 // hücre düştüyse test konusu değil
+  cancelAttack(s, a);
+  assert(Math.abs(B.pool - onceB) < 1e-6,
+    `savunan hücre kaybetmeden ${(onceB - B.pool).toFixed(0)} asker yitirdi`);
+});
+
+t('ölen ulusun seferi haritada kuşatma izi bırakmaz', () => {
+  const s = fresh();
+  const A = s.nations[0];
+  let hedef = -1;
+  for (let i = 1; i < s.nations.length; i++) if (findBorder(s, 0, i) >= 0) { hedef = i; break; }
+  if (hedef < 0) return;
+  A.pool = 1e6;
+  startAttack(s, A, hedef, frontCost(s, A, hedef) * 2);
+  for (let i = 0; i < 20; i++) step(s, 1 / 30, 1 / 30);
+  let kusatma = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) kusatma++;
+  assert(kusatma > 0, 'kuşatma oluşmadı');
+  // saldıranı öldür — seferi listeden çıkarken izini de silmeli
+  for (let c = 0; c < W * H; c++) if (s.owner[c] === A.id) { s.owner[c] = -1; }
+  A.cells = 0;
+  step(s, 1 / 30, 1 / 30);
+  let kalan = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) kalan++;
+  assert.equal(kalan, 0, `${kalan} hücrede sahipsiz kuşatma izi kalmış`);
+});
+
+t('ittifak bozulunca kuşatma izi de temizlenir', () => {
+  const s = fresh();
+  const A = s.nations[0], B = s.nations[1];
+  formAlliance(s, A, B);
+  A.pool = 1e6;
+  const a = startAttack(s, A, -1, frontCost(s, A, -1) * 2);
+  assert(a, 'saldırı başlamadı');
+  for (let i = 0; i < 20; i++) step(s, 1 / 30, 1 / 30);
+  breakAlliance(s, A, B);
+  let kalan = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) kalan++;
+  assert.equal(kalan, 0, `${kalan} hücrede kuşatma izi kalmış`);
+  assert.equal(s.attacks.filter(x => x.from === A.id).length, 0, 'sefer kapanmadı');
+});
+
+t('aynı karede iki sefer kapanınca doğru olanlar silinir', () => {
+  const s = fresh();
+  const A = s.nations[0], B = s.nations[1];
+  A.pool = 1e6; B.pool = 1e6;
+  const a = startAttack(s, A, -1, frontCost(s, A, -1) * 2);
+  const b = startAttack(s, B, -1, frontCost(s, B, -1) * 2);
+  assert(a && b, 'seferler başlamadı');
+  cancelAttack(s, a);
+  assert(s.attacks.includes(b), 'yanlış sefer silindi');
+  assert(!s.attacks.includes(a), 'iptal edilen sefer listede kaldı');
+});
+
 // ---------------------------------------------------------------- deniz
 
 console.log('\nDeniz sınırı');

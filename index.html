@@ -54,6 +54,11 @@
         </div>
         <div class="mini-bar"><i id="mini-fill"></i><span id="mini-soft" class="cap-mark"></span></div>
         <div id="mini-pips" class="pips small"></div>
+        <!-- telefonda çekmeceyi açmadan saldırı gücü ayarlanabilsin -->
+        <div class="mini-pow">
+          <input id="mini-pct" type="range" min="3" max="100" value="38">
+          <b id="mini-pow-label">—</b>
+        </div>
         <div id="mini-front" class="mini-front hidden"></div>
       </div>
 
@@ -120,6 +125,7 @@
     <div id="end-box">
       <h1 id="end-title"></h1>
       <p id="end-desc"></p>
+      <div id="end-stats"></div>
       <button onclick="location.reload()">Yeniden Oyna</button>
     </div>
   </div>

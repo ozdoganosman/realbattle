@@ -29,7 +29,8 @@ const ui = {
   hoverCell: -1, hoverOwner: undefined,
   now: 0,
   shake: 0,
-  streak: 0, lastCells: 0,
+  streak: 0, lastCells: 0, halka: 0,
+  zirve: 0, fethedilen: 0, sonCells: 0,   // bitiş ekranı özeti
   shownTroops: 0, shownLand: 0,     // yumuşak akan sayaçlar
   lastLogLen: 0,
 };
@@ -304,11 +305,15 @@ function flash(text) {
 
 // ------------------------------------------------------------------ arayüz
 
-$('pct').addEventListener('input', e => {
-  ui.pct = +e.target.value / 100;
-  refreshPct();
-});
-$('pct').addEventListener('change', () => sfx.ui());
+// Kaydıraç iki yerde: panelde ve dar ekranda çekmece kapalıyken görünen
+// şeritte. İkisi de aynı ui.pct'yi sürer, refreshPct ikisini de tazeler.
+for (const id of ['pct', 'mini-pct']) {
+  $(id).addEventListener('input', e => {
+    ui.pct = +e.target.value / 100;
+    refreshPct();
+  });
+  $(id).addEventListener('change', () => sfx.ui());
+}
 
 // Kaydıracın eğrisi bilerek küçük yatırımlara yatkın: alt uçta ince ayar var,
 // borç yalnız son dilimde başlar. Doğrusal olsaydı orta konumlar bile hazineyi
@@ -374,11 +379,20 @@ function refreshPct() {
     `<b>${fmt(troops)}</b> asker` +
     (kat ? ` <span class="floor">· sınırı ${kat} hücre iter</span>` : '') +
     (borc > 0 ? ` <span class="debt">· ${fmt(borc)} borç</span>` : '');
+
+  // İki kaydıraç da aynı değeri göstersin (hangisi sürülürse sürülsün).
+  const v = String(Math.round(ui.pct * 100));
+  for (const id of ['pct', 'mini-pct']) if ($(id).value !== v) $(id).value = v;
+  const ml = $('mini-pow-label');
+  ml.innerHTML = `${fmt(troops)}<span class="s"> asker${kat ? ` · ${kat} hücre` : ''}</span>`;
+  ml.className = borc > 0 ? 'debt' : '';
   // Borç bölgesi kaydıracın hep aynı yerinde: sabit bir çizgi öğrenmesi kolay,
   // hazineyle kayan bir eşik oynarken kestirilemez.
-  const p = $('pct');
-  p.style.setProperty('--borrow-at', (BORROW_AT * 100) + '%');
-  p.classList.toggle('borrowing', borc > 0);
+  for (const id of ['pct', 'mini-pct']) {
+    const p = $(id);
+    p.style.setProperty('--borrow-at', (BORROW_AT * 100) + '%');
+    p.classList.toggle('borrowing', borc > 0);
+  }
 }
 
 function refreshTop() {
@@ -702,6 +716,21 @@ function showEnd() {
   $('end-desc').textContent = sim.won
     ? `${me.name} kıtanın %${Math.round(WIN_FRAC * 100)}'ından fazlasına hükmediyor.`
     : `${me.name} haritadan silindi.`;
+
+  // Kuru bir "Zafer/Yenilgi" yerine oyunun hikâyesi: ne kadar sürdü, nereye
+  // kadar geldin, kaç taht devrildi.
+  const dk = Math.floor(sim.t / 60), sn = Math.round(sim.t % 60);
+  const canli = sim.nations.filter(n => n.alive).sort((a, b) => b.cells - a.cells);
+  const sira = canli.indexOf(me) + 1;
+  const satir = [
+    ['Süre', dk ? `${dk} dk ${sn} sn` : `${sn} sn`],
+    ['Zirve toprak', `%${(ui.zirve * 100).toFixed(1)}`],
+    ['Fethedilen toprak', fmt(ui.fethedilen) + ' birim'],
+    ['Yıkılan krallık', `${sim.nations.length - canli.length} / ${sim.nations.length - 1}`],
+    ['Sıralaman', sira > 0 ? `${sira}.` : '—'],
+  ];
+  $('end-stats').innerHTML =
+    satir.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
   sim.won ? sfx.win() : sfx.lose();
 }
 
@@ -720,12 +749,29 @@ function frame(now) {
     drainFx();
 
     const me = sim.nations[sim.playerId];
-    // toprak kazandıkça yükselen tık sesi
+    // Toprak kazandıkça yükselen tık sesi. Halka topluca düştüğü için tek
+    // hücrelik artışla halka düşüşünü ayır: halka için tok bir vuruş.
     if (me.cells > ui.lastCells) {
-      ui.streak += me.cells - ui.lastCells;
-      sfx.capture(ui.streak, now);
+      const artis = me.cells - ui.lastCells;
+      ui.streak += artis;
+      if (artis > 3) { ui.halka++; sfx.ring(ui.halka); }
+      else sfx.capture(ui.streak, now);
     } else if (ui.streak) ui.streak = Math.max(0, ui.streak - 1);
     ui.lastCells = me.cells;
+
+    // Kuşatma uğultusu: sefer sürerken halkanın ne kadar dolduğunu duyur.
+    const benim = sim.attacks.find(a => a.from === me.id);
+    if (benim) {
+      let t = 0, n = 0;
+      for (const c of benim.layer) { if (sim.progBy[c] === me.id) { t += sim.prog[c]; n++; } }
+      if (n) sfx.siege(t / n, now);
+    } else ui.halka = 0;
+
+    // bitiş ekranı için özet
+    const pay = landFrac(sim, me);
+    if (pay > ui.zirve) ui.zirve = pay;
+    if (me.cells > ui.sonCells) ui.fethedilen += me.cells - ui.sonCells;
+    ui.sonCells = me.cells;
 
     // sayaçlar sıçramaz, akar
     const k = 1 - Math.pow(0.001, realDt);

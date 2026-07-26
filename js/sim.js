@@ -232,7 +232,7 @@ export function breakAlliance(sim, breaker, other) {
   // bozanın o tarafa süren saldırıları da durur
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
     const at = sim.attacks[i];
-    if (at.from === breaker.id) { deposit(sim, breaker, at.troops); sim.attacks.splice(i, 1); }
+    if (at.from === breaker.id) bitirSaldiri(sim, at);   // asker + kuşatma iade
   }
   log(sim, `💔 ${breaker.name} ittifakı bozdu — ${BETRAY_LOCK}sn saldıramaz`, 'betray');
   sim.fx.push({ tip: 'betray', nat: breaker.id });
@@ -325,6 +325,7 @@ export function startAttack(sim, nat, targetId, troops) {
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
     troops, start: troops, layer, next: [], inQ, rate,
+    yatirim: 0,       // yarım halkaya yatırılmış, henüz toprağa dönmemiş asker
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -332,9 +333,7 @@ export function startAttack(sim, nat, targetId, troops) {
 }
 
 export function cancelAttack(sim, atk) {
-  const i = sim.attacks.indexOf(atk);
-  if (i < 0) return;
-  bitirSaldiri(sim, atk, i);      // kalan asker döner, kuşatma bozdurulur
+  bitirSaldiri(sim, atk);         // kalan asker ve yarım kuşatma iade edilir
 }
 
 function take(sim, cell, nat) {
@@ -364,8 +363,9 @@ function kill(sim, nat, dagil = false) {
   nat.alive = false;
   for (const id of nat.allies) sim.nations[id].allies.delete(nat.id);
   nat.allies.clear();
+  // Sefer listesinden ham splice DEĞİL: kuşatma izleri temizlensin.
   for (let i = sim.attacks.length - 1; i >= 0; i--)
-    if (sim.attacks[i].from === nat.id) sim.attacks.splice(i, 1);
+    if (sim.attacks[i].from === nat.id) bitirSaldiri(sim, sim.attacks[i]);
   if (dagil) {
     // Kalan kırıntı fatihe gitmez, SAHİPSİZ kalır: kimse tıklayamayacak kadar
     // küçük bir lekeyi kovalamak zorunda kalmasın, toprak yeniden yarışa girsin.
@@ -389,27 +389,35 @@ function kill(sim, nat, dagil = false) {
 // halka tam ilerler ya hiç — haritada yarım boyalı iz ya da tırtıklı, nokta
 // nokta bir cephe kalmaz. (Hamle zaten tam halkalara yuvarlandığı için bu
 // yol çoğunlukla yalnız son halkanın artığını toplar.)
-function bitirSaldiri(sim, a, i) {
+// HER sefer buradan kapanmalı: kuşatma izini temizlemeyen bir kapanış haritada
+// kalıcı yarım boyalı hücreler bırakır. İndeks dışarıdan alınmaz — take() bir
+// ulusu öldürüp araya splice yapabildiği için dışarıdaki indeks bayatlayabilir
+// ve yanlış seferi silerdi.
+function bitirSaldiri(sim, a) {
+  const i = sim.attacks.indexOf(a);
+  if (i < 0) return;
   const nat = sim.nations[a.from];
-  const sag = nat.alive;
-  const cost = attackCost(sim, a.target);
-  let kredi = 0;
   for (const c of a.layer) {
-    if (sim.progBy[c] !== a.from || sim.prog[c] <= 0) continue;
-    kredi += sim.prog[c];
+    if (sim.progBy[c] !== a.from) continue;
     sim.prog[c] = 0; sim.progBy[c] = -1;
   }
-  if (sag) deposit(sim, nat, Math.max(0, a.troops) + kredi * cost);
+  // Yarım halkaya yatırılan asker, ÖDENDİĞİ bedelle geri döner. Bitişteki
+  // bedelle hesaplamak yanlıştı: savunan kanadıkça hücre ucuzluyor, iade de
+  // sessizce eriyordu.
+  if (nat.alive) deposit(sim, nat, Math.max(0, a.troops) + Math.max(0, a.yatirim));
   sim.attacks.splice(i, 1);
   sim.dirty = true;
 }
 
 function stepAttacks(sim, dt) {
   const tmp = [];
-  for (let i = sim.attacks.length - 1; i >= 0; i--) {
-    const a = sim.attacks[i];
+  // Kopya üzerinden gez: take() bir ulusu öldürebilir, o da o ulusun seferini
+  // listeden çıkarır. Ham indeksle dönerken liste bir adımda iki kısalıyor ve
+  // döngü dizinin dışına taşıyordu (sim.attacks[i] === undefined).
+  for (const a of [...sim.attacks]) {
+    if (sim.attacks.indexOf(a) < 0) continue;      // bu kare içinde kapanmış
     const nat = sim.nations[a.from];
-    if (!nat.alive) { bitirSaldiri(sim, a, i); continue; }
+    if (!nat.alive) { bitirSaldiri(sim, a); continue; }
 
     // Bütçe, sıradaki halkanın BÜTÜN hücrelerine eşit dağıtılır: her hücrenin
     // kuşatma ilerlemesi aynı anda ve aynı hızda artar. Hücre ancak dolunca
@@ -439,11 +447,17 @@ function stepAttacks(sim, dt) {
       }
       butce -= harcanan;
       a.troops -= harcanan * cost;
-      if (a.target >= 0) {
-        const def = sim.nations[a.target];
-        def.pool = Math.max(0, def.pool - harcanan * cost * DEF_LOSS);
-      }
+      a.yatirim += harcanan * cost;
       if (harcanan > 0) sim.dirty = true;
+      // Savunan yalnız HÜCRE KAYBEDİNCE kanar. Kuşatma ilerledikçe kanatmak
+      // bedavaya hasar demekti: yarım kalan kuşatma saldırana iade ediliyor
+      // ama savunanın kaybı kalıcıydı — art arda ufak dokunuşla bir orduyu
+      // hiç toprak almadan eritmek mümkündü.
+      if (a.target >= 0 && dolan.length) {
+        const def = sim.nations[a.target];
+        def.pool = Math.max(0, def.pool - dolan.length * cost * DEF_LOSS);
+      }
+      a.yatirim = Math.max(0, a.yatirim - dolan.length * cost);
       for (const c of dolan) {
         take(sim, c, nat);
         a.lastX = c % W; a.lastY = (c / W) | 0;
@@ -459,7 +473,7 @@ function stepAttacks(sim, dt) {
       if (!dolan.length) break;         // hiçbir hücre dolmadı, tur ilerlemiyor
     }
 
-    if (bitti || a.troops <= cost * 0.01) bitirSaldiri(sim, a, i);
+    if (bitti || a.troops <= cost * 0.01) bitirSaldiri(sim, a);
   }
 }
 
@@ -486,6 +500,7 @@ function stepGrowth(sim, dt) {
       if (borcluydu && nat.pool >= 0) log(sim, `💰 ${nat.name} borcunu kapattı`, 'info');
     }
     sim.fx.push({ tip: 'tick', income });
+    if (sim.fx.length > 200) sim.fx.splice(0, sim.fx.length - 200);
   }
 }
 

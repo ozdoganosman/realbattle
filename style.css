@@ -191,20 +191,20 @@ body {
 }
 
 /* saldırı gücü kaydıracı */
-#pct {
+#pct, #mini-pct {
   width: 100%; height: 30px;
   -webkit-appearance: none; appearance: none; background: none;
 }
 /* Şeridin --borrow-at noktasına kadarı elindeki asker, ötesi borç bölgesi.
    Eşik hazine değiştikçe kayar. */
-#pct::-webkit-slider-runnable-track {
+#pct::-webkit-slider-runnable-track, #mini-pct::-webkit-slider-runnable-track {
   height: 8px; border-radius: 4px;
   background: linear-gradient(90deg,
     #8a6f3d 0%, #a3814a var(--borrow-at, 100%),
     #c2603f var(--borrow-at, 100%), #d4573d 100%);
 }
-#pct::-moz-range-track { height: 8px; border-radius: 4px; background: #b39a68; }
-#pct::-webkit-slider-thumb {
+#pct::-moz-range-track, #mini-pct::-moz-range-track { height: 8px; border-radius: 4px; background: #b39a68; }
+#pct::-webkit-slider-thumb, #mini-pct::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 24px; height: 24px; margin-top: -8px;
   border-radius: 50%; cursor: grab;
@@ -212,8 +212,8 @@ body {
   border: 2px solid #5c4726;
   transition: transform .1s var(--ease);
 }
-#pct::-webkit-slider-thumb:active { transform: scale(1.22); cursor: grabbing; }
-#pct::-moz-range-thumb {
+#pct::-webkit-slider-thumb:active, #mini-pct::-webkit-slider-thumb:active { transform: scale(1.22); cursor: grabbing; }
+#pct::-moz-range-thumb, #mini-pct::-moz-range-thumb {
   width: 22px; height: 22px; border-radius: 50%;
   background: #a3814a; border: 2px solid #5c4726; cursor: grab;
 }
@@ -221,7 +221,7 @@ body {
 .pct-label .debt { color: var(--bad); font-weight: bold; }
 /* kaydıraç az söylediğinde hamle bir halkaya yuvarlanır — sayı bunu gösterir */
 .pct-label .floor { color: var(--dim); font-size: 12px; }
-#pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
+#pct.borrowing::-webkit-slider-thumb, #mini-pct.borrowing::-webkit-slider-thumb { border-color: var(--bad); }
 #tb-troops.debt { color: #ff8f7a; }
 
 /* süren seferler */
@@ -362,10 +362,10 @@ button.mini.bad:hover { background: #cc543b; }
   .spd { padding: 6px 8px; margin-left: 3px; font-size: 11px; }
 
   #main { flex-direction: column; }
-  #map-wrap { padding: 4px; padding-bottom: 158px; }
+  #map-wrap { padding: 4px; padding-bottom: 152px; }
 
   #log { font-size: 11.5px; max-width: 60%; left: 8px; top: 6px; }
-  #hint-bar { font-size: 11.5px; bottom: 166px; max-width: 92%; text-align: center; }
+  #hint-bar { font-size: 11.5px; bottom: 160px; max-width: 92%; text-align: center; }
   #target-chip { font-size: 12px; }
   #zoom-ctl { right: 7px; top: 7px; }
   #zoom-ctl button { width: 42px; height: 42px; font-size: 20px; }
@@ -379,7 +379,7 @@ button.mini.bad:hover { background: #cc543b; }
     box-shadow: 0 -6px 26px rgba(0,0,0,.5);
     z-index: 5;
   }
-  #panel { max-height: 158px; }        /* özet şerit + kaydıraç sığsın */
+  #panel { max-height: 152px; }        /* özet şerit: sayılar, tavan, döngü, güç */
   #panel.open { max-height: 74vh; overflow-y: auto; }
 
   /* --- kapalı çekmecenin özet şeridi --- */
@@ -411,11 +411,9 @@ button.mini.bad:hover { background: #cc543b; }
   .mini-front b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .mini-front .s { opacity: .7; }
 
-  /* kapalıyken saldırı gücü bölümü sıkışsın ama etiketi kesilmesin */
-  #panel:not(.open) .sec { padding: 4px 13px 6px; border-bottom: none; }
-  #panel:not(.open) .sec-h { display: none; }
-  #panel:not(.open) #pct { height: 28px; }
-  #panel:not(.open) .pct-label { font-size: 13px; }
+  /* Çekmece kapalıyken YALNIZ özet şerit görünür — saldırı gücü kaydıracının
+     bir eşi şeridin içinde olduğu için panelin bölümleri tamamen gizlenir. */
+  #panel:not(.open) .sec { display: none; }
 
   #drawer {
     display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -453,3 +451,22 @@ button.mini.bad:hover { background: #cc543b; }
   #panel.open { max-height: 84vh; }
   #nation-list { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* --- çekmece kapalıyken saldırı gücü --- */
+.mini-pow { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.mini-pow #mini-pct { flex: 1; margin: 0; height: 26px; }
+.mini-pow b {
+  font-size: 12px; font-variant-numeric: tabular-nums;
+  min-width: 96px; text-align: right; white-space: nowrap;
+}
+.mini-pow b .s { color: var(--dim); font-weight: normal; }
+.mini-pow b.debt { color: var(--bad); }
+
+/* --- bitiş ekranı özeti --- */
+#end-stats {
+  display: grid; grid-template-columns: auto auto; gap: 4px 18px;
+  justify-content: center; margin: 14px 0 4px;
+  font-size: 14px; font-variant-numeric: tabular-nums;
+}
+#end-stats span { color: var(--dim); text-align: right; }
+#end-stats b { text-align: left; }

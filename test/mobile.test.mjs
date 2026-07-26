@@ -105,8 +105,10 @@ const info = () => page.evaluate(() => {
 console.log('\nÇekmece');
 const s0 = await info();
 check('çekmece kapalı başlıyor', !s0.drawerOpen);
+// Saldırı gücü artık özet şeridin içinde; panelin kendi bölümleri kapalıyken
+// tamamen gizli (bkz. "Özet şerit" bölümü).
 check('kapalıyken saldırı gücü görünür', await page.evaluate(() =>
-  document.getElementById('pct').getBoundingClientRect().height > 0));
+  document.getElementById('mini-pct').getBoundingClientRect().height > 0));
 check('kapalıyken krallık listesi gizli', await page.evaluate(() =>
   document.querySelector('.sec.grow').getBoundingClientRect().height === 0));
 
@@ -237,6 +239,36 @@ await page.waitForTimeout(6000);
 const fin = await info();
 check('telefonda oyun ilerliyor', fin.t > afterTap.t + 4, `t=${fin.t}`);
 await page.screenshot({ path: path.join(OUT, 'm5-oyun.png') });
+
+// Telefonda çekmeceyi açmadan saldırı gücü ayarlanabilmeli — eskiden kaydıraç
+// yalnız panelde vardı, her hamle için çekmeceyi açmak gerekiyordu.
+console.log('\nÖzet şerit');
+check('kapalı çekmecede saldırı gücü kaydıracı görünür', await page.evaluate(() => {
+  const p = document.getElementById('mini-pct');
+  const r = p.getBoundingClientRect();
+  return r.width > 40 && r.height > 10 && r.bottom <= window.innerHeight + 1;
+}));
+
+check('şeritteki kaydıraç gücü değiştiriyor', await page.evaluate(async () => {
+  const mp = document.getElementById('mini-pct');
+  const once = window.__rb.ui.pct;
+  mp.value = '70'; mp.dispatchEvent(new Event('input'));
+  await new Promise(r => setTimeout(r, 60));
+  const sonra = window.__rb.ui.pct;
+  // paneldeki eşi de aynı yere gelmeli
+  const es = +document.getElementById('pct').value;
+  return Math.abs(sonra - 0.7) < 1e-6 && sonra !== once && es === 70;
+}));
+
+check('şerit gidecek askeri yazıyor', await page.evaluate(() => {
+  const t = document.getElementById('mini-pow-label').textContent;
+  return /\d/.test(t) && /asker/.test(t);
+}));
+
+check('çekmece kapalıyken panel bölümleri gizli', await page.evaluate(() => {
+  const p = document.getElementById('pct');
+  return p.getBoundingClientRect().height === 0;
+}));
 
 console.log('\nKonsol');
 check('telefonda JS hatası yok', errors.length === 0, errors.join('\n      '));

@@ -37,12 +37,17 @@ haritası gibi dursun diye varlar.
 ## Hissiyat
 
 - Dar ekranda çekmece kapalıyken bile asker, faiz, gelir geri sayımı, hazine
-  çubuğu ve süren sefer görünür kalır
+  çubuğu, döngü göstergesi, süren sefer **ve saldırı gücü kaydıracı** görünür
+  kalır — telefonda hamle yapmak için çekmeceyi açmaya gerek yok
 - Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır
 - Yıkılan krallık parçacıklara dağılır
+- Kuşatma sürerken alçak bir uğultu duyulur, perde halka doldukça yükselir;
+  halka düşünce tok bir vuruş gelir, art arda düşen halkalarda perde tırmanır
+- Bitiş ekranı oyunun özetini verir: süre, zirve toprak, fethedilen toprak,
+  yıkılan krallık sayısı, sıralaman
 - Sayaçlar sıçramaz, akar
 - Ses tamamen **sentezlenir** (WebAudio) — tek dosyaya sığsın diye hiç ses dosyası yok
 
@@ -68,9 +73,9 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (65)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (46)
-npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
+npm test               # başsız simülasyon (70)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (47)
+npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (28)
 npm run test:all
 ```
 

@@ -6,6 +6,7 @@ export const sfx = {
   on: true,
   master: null,
   lastTick: 0,
+  lastSiege: 0,
 
   // tarayıcılar sesi ancak bir kullanıcı hareketinden sonra açar
   init() {
@@ -69,6 +70,22 @@ export const sfx = {
     this.lastTick = now;
     const p = Math.min(streak, 24) / 24;
     this.tone(520 + p * 460, 0.05, { type: 'square', gain: 0.1 + p * 0.09 });
+  },
+
+  // Kuşatma sürerken alçak bir uğultu: halka doldukça perde yükselir. Yeni
+  // mekanikte hücreler tek tek değil topluca düştüğü için arada sessizlik
+  // oluyordu — bu, cephenin "çalıştığını" duyurur.
+  siege(p, now) {
+    if (now - this.lastSiege < 190) return;
+    this.lastSiege = now;
+    this.tone(150 + p * 190, 0.13, { type: 'sine', gain: 0.035 + p * 0.03 });
+  },
+
+  // Halka düştü: tok bir vuruş, art arda düşen halkalarda perde yükselir.
+  ring(k) {
+    const p = Math.min(k, 6) / 6;
+    this.tone(88, 0.16, { type: 'sine', gain: 0.3 });
+    this.tone(300 + p * 220, 0.12, { type: 'triangle', gain: 0.16, delay: 0.03 });
   },
 
   // arazi geliri yattı — 10 tikte bir

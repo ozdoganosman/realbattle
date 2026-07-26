@@ -421,9 +421,11 @@ check('kısmi kuşatma haritada renk olarak görünüyor', await page.evaluate(a
   sim.dirty = true;
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const once = kare();
-  api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 0.3);
+  // Çok halkalı bir sefer: ölçüm anında mutlaka yarım dolmuş bir halka olsun
+  // (tek halkalık hamle ilk saniyede kapanıp kuşatmayı bitiriyordu).
+  api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 6);
   window.__rb.ui.speed = 1;
-  await new Promise(r => setTimeout(r, 700));
+  await new Promise(r => setTimeout(r, 400));
   window.__rb.ui.speed = 0;
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const sonra = kare();
@@ -461,6 +463,14 @@ await page.waitForTimeout(300);
 check('zafer ekranı açılıyor',
   !(await page.$eval('#end-screen', el => el.classList.contains('hidden'))));
 check('zafer başlığı doğru', (await page.textContent('#end-title')).includes('Zafer'));
+// Kuru bir "Zafer" yerine oyunun özeti: süre, zirve, fetih, devrilen taht.
+check('bitiş ekranı özet veriyor', await page.evaluate(() => {
+  const el = document.getElementById('end-stats');
+  const yazi = el.textContent;
+  return el.querySelectorAll('b').length >= 5
+    && /Süre/.test(yazi) && /Zirve/.test(yazi) && /Yıkılan/.test(yazi)
+    && /\d/.test(el.querySelector('b').textContent);
+}));
 await page.screenshot({ path: path.join(OUT, '06-zafer.png') });
 
 console.log('\nKonsol');
