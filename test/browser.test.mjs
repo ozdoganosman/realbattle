@@ -421,18 +421,19 @@ check('kısmi kuşatma haritada renk olarak görünüyor', await page.evaluate(a
   sim.dirty = true;
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const once = kare();
-  const hucreOnce = me.cells;
   api.startAttack(sim, me, -1, api.frontCost(sim, me, -1) * 0.3);
   window.__rb.ui.speed = 1;
-  await new Promise(r => setTimeout(r, 900));
+  await new Promise(r => setTimeout(r, 700));
   window.__rb.ui.speed = 0;
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const sonra = kare();
   let degisen = 0;
   for (let i = 0; i < once.length; i += 4)
     if (Math.abs(once[i] - sonra[i]) + Math.abs(once[i + 1] - sonra[i + 1]) > 12) degisen++;
-  // hücre el değiştirmeden bile yüzlerce piksel değişmiş olmalı
-  return degisen > 200 && me.cells === hucreOnce;
+  // kuşatma altındaki hücrelerin çoğu HÂLÂ dolmamış olmalı (sefer sürüyor)
+  let yarim = 0;
+  for (let c = 0; c < sim.prog.length; c++) if (sim.prog[c] > 0.02 && sim.prog[c] < 1) yarim++;
+  return degisen > 200 && yarim > 20;
 }));
 
 check('ses motoru kuruldu', await page.evaluate(() => !!window.__rb.sfx.ctx));

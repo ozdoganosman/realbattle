@@ -17,7 +17,7 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 | Mekanik | Nasıl işler |
 |---|---|
 | **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler ve bütçe halkanın bütün hücrelerine **eşit** dağıtılır: her hücrenin kuşatma ilerlemesi aynı anda, aynı hızda artar. Hücre ancak ilerlemesi dolunca el değiştirir, yani sınır her yerde birlikte hareket eder — sıra sıra tek hücre düşen fermuar ya da dağınık benek görüntüsü yok. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
-| **Kuşatma birikir** | Hamle istediğin kadar ince dilinir. Cephenin %25'i kadar asker sürersen hiçbir hücre el değiştirmez ama bütün sınır senin rengine doğru %25 kayar — ve bu ilerleme **kalıcıdır**. Dört küçük hamle bir büyük hamle eder, toplam bedel aynıdır. Kaydıracın altındaki yazı gücün sınırı ne kadar kuşattığını söyler (*sınırı %25 kuşatır* / *sınırı 3.2 hücre iter*). |
+| **Kuşatma ve bozdurma** | Hamle istediğin kadar ince dilinir. Sefer sürerken cephenin tamamı senin rengine doğru kayar; sefer bitince biriken kuşatma **bozdurulur** — toplamı kadar bitişik hücre fiilen alınır, gerisi sıfırlanır. Böylece ne asker heba olur ne de haritada yarım boyalı izler kalır: kuşatma yalnız sefer sürerken görünür. Kaydıracın altındaki yazı gücün sınırı ne kadar kuşattığını söyler (*sınırı %25 kuşatır* / *sınırı 3.2 hücre iter*). |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** — oran toprak payıyla yükselir ve aralık geniştir: bir avuç toprakla tik başına ~**%2.4**, kıtaya hükmederken ~**%28** (açılışta ayrıca 1.9 kat hızlı). Küçükken ekonomi sürünür, büyüdükçe uçar. Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs neredeyse 1 (toprak iki katına çıkınca ödeme ~2.04 kat), yani büyümek kendini az besler ve lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
 | **Tavanlar** | Yumuşak tavan toprağın ~**11 katı**, sert tavan ~**17 katı**. İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok, ama doygunluk düz bir çizgi de değil. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
@@ -25,9 +25,10 @@ animasyonu, ele geçen her hücrenin parlaması, sentezlenmiş ses.
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 2.5 askere gelir, hazinesi tıka basa dolu olanınki **32** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
 | **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
+| **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
 | **İttifak** | Müttefikler birbirine saldıramaz. Ama ittifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. |
 
-Zafer: kıtanın **%60**'ı. Bütün toprağını kaybedersen tarihe karışırsın.
+Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
 Haritadaki arazi tipleri ve isimli şehirler **tamamen dekoratiftir** — fetih
 maliyetini, hızı ya da geliri etkilemezler. Sadece harita gerçek bir ortaçağ
@@ -67,7 +68,7 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (62)
+npm test               # başsız simülasyon (64)
 npm run test:browser   # masaüstü tarayıcı, gerçek fare (46)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (24)
 npm run test:all

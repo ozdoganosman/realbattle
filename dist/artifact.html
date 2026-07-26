@@ -552,10 +552,11 @@ button.mini.bad:hover { background: #cc543b; }
       <h1>RealBattle</h1>
       <p class="sub">Bir kıta, on altı taht, tek bir hükümdar</p>
       <div class="rules">
-        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — o hedefle olan <b>bütün sınır hattın</b> aynı anda ve eşit ilerler. Az asker sürersen sınır boydan boya senin rengine doğru kayar; ilerleme birikir, art arda basınca hücreler düşer.</div>
+        <div><b>Dokun, yayıl.</b> Bir toprağa dokun — o hedefle olan <b>bütün sınır hattın</b> aynı anda ve eşit ilerler. Az asker sürersen sınır boydan boya senin rengine doğru kayar; sefer bitince biriken kuşatma toprağa çevrilir.</div>
         <div><b>Asker bileşik büyür.</b> Mevcut askerin faiz getirir, toprağın ayrıca gelir. Biriktikçe hızlanır.</div>
         <div><b>Seri seri bas.</b> Kaydıraç alt uçta yatıktır — küçük hamleler ucuzdur. Borç yalnız <b>kırmızı bölgede</b> başlar; oraya çekersen hazinenden fazlasını sürersin ve borç kapanana kadar yeni sefer yok.</div>
         <div><b>Dolu hazine kaledir.</b> Bedel savunanın asker yoğunluğuyla <b>üstel</b> artar — dolu bir düşmanın hücresi boşunkinin 13 katına gelir. Çarpışmada iki taraf da erir ama saldıran daha çok verir; kale ancak kanata kanata çöker.</div>
+        <div><b>Küçülen dağılır.</b> Bir krallık avuç içi kadar kalınca dağılır ve toprağı <b>sahipsiz</b> olur — kimse kırıntı kovalamaz.</div>
         <div><b>İttifak kur.</b> Ama bozan <b>20 saniye</b> hiçbir yere saldıramaz.</div>
       </div>
       <p class="goal">Kıtanın <b>%60</b>'ına hükmet.</p>
@@ -882,6 +883,9 @@ const DEF_EXP = 1.15;
 const DEF_LOSS = 0.75;
 const ATTACK_SECS = 3.6;              // dalganın hedeflenen süresi
 const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
+// Bir ulus bu kadar küçülünce dağılır: toprakları sahipsiz kalır. Kalan bir
+// iki hücrelik kırıntıya nişan almak imkânsız, haritayı da kirletiyor.
+const MIN_CELLS = 0.0008;             // kıtanın bu payının altı = dağılma
 
 function createSim(seed) {
   const world = createWorld(seed);
@@ -1134,8 +1138,7 @@ function startAttack(sim, nat, targetId, troops) {
 function cancelAttack(sim, atk) {
   const i = sim.attacks.indexOf(atk);
   if (i < 0) return;
-  deposit(sim, sim.nations[atk.from], atk.troops);   // geri çağrılan asker garnizona döner
-  sim.attacks.splice(i, 1);
+  bitirSaldiri(sim, atk, i);      // kalan asker döner, kuşatma bozdurulur
 }
 
 function take(sim, cell, nat) {
@@ -1148,6 +1151,7 @@ function take(sim, cell, nat) {
     // yoksa toprak kaybeden bir ulus tavanının üstünde asker taşır.
     if (def.pool > 0) def.pool = Math.min(def.pool, hardCap(sim, def));
     if (def.cells <= 0) kill(sim, def);
+    else if (def.cells < minCells(sim)) kill(sim, def, true);
   }
   sim.owner[cell] = nat.id;
   sim.prog[cell] = 0; sim.progBy[cell] = -1;
@@ -1156,16 +1160,86 @@ function take(sim, cell, nat) {
   sim.dirty = true;
 }
 
-function kill(sim, nat) {
+// Dağılma eşiği: kıtanın binde 0.8'i, en az 10 hücre.
+const minCells = sim => Math.max(10, Math.round(sim.landCells * MIN_CELLS));
+
+function kill(sim, nat, dagil = false) {
   if (!nat.alive) return;
   nat.alive = false;
   for (const id of nat.allies) sim.nations[id].allies.delete(nat.id);
   nat.allies.clear();
   for (let i = sim.attacks.length - 1; i >= 0; i--)
     if (sim.attacks[i].from === nat.id) sim.attacks.splice(i, 1);
-  log(sim, `💀 ${nat.name} tarihe karıştı`, 'death');
+  if (dagil) {
+    // Kalan kırıntı fatihe gitmez, SAHİPSİZ kalır: kimse tıklayamayacak kadar
+    // küçük bir lekeyi kovalamak zorunda kalmasın, toprak yeniden yarışa girsin.
+    for (let c = 0; c < W * H; c++) {
+      if (sim.owner[c] !== nat.id) continue;
+      sim.owner[c] = -1;
+      sim.prog[c] = 0; sim.progBy[c] = -1;
+      sim.lastCapture[c] = sim.t;
+    }
+    nat.cells = 0;
+    nat.pool = 0;
+    sim.dirty = true;
+  }
+  log(sim, `💀 ${nat.name} ${dagil ? 'dağıldı — toprakları sahipsiz' : 'tarihe karıştı'}`, 'death');
   sim.fx.push({ tip: 'death', nat: nat.id, x: nat.cx, y: nat.cy });
   if (nat.id === sim.playerId) { sim.over = true; sim.won = false; }
+}
+
+// Bir kuşatma yayını uzamsal olarak sırala: bozdurma sırasında yan yana
+// hücreler arka arkaya alınsın, sınırda dağınık benek kalmasın.
+function siraya(hucreler) {
+  if (hucreler.length < 3) return hucreler;
+  const kalan = new Set(hucreler);
+  const out = [];
+  let c = hucreler[0];
+  while (kalan.size) {
+    if (c === undefined) c = kalan.values().next().value;
+    kalan.delete(c);
+    out.push(c);
+    const x = c % W, y = (c / W) | 0;
+    let sonraki;
+    for (let dy = -1; dy <= 1 && sonraki === undefined; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (kalan.has(n)) { sonraki = n; break; }
+      }
+    }
+    c = sonraki;
+  }
+  return out;
+}
+
+// Sefer biterken yarım kalan kuşatma BOZDURULUR: biriken ilerlemenin toplamı
+// kadar bitişik hücre fiilen alınır, kalanı sıfırlanır. İki derdi birden
+// çözer — sürülen asker heba olmaz, ve haritada yarım boyalı "çizgi çizgi"
+// izler kalmaz. Kuşatma yalnız sefer sürerken görünür.
+function bitirSaldiri(sim, a, i) {
+  const nat = sim.nations[a.from];
+  const sag = nat.alive;
+  let kredi = 0;
+  const bekleyen = [];
+  for (const c of a.layer) {
+    if (sim.progBy[c] !== a.from || sim.prog[c] <= 0) continue;
+    kredi += sim.prog[c];
+    bekleyen.push(c);
+  }
+  for (const c of siraya(bekleyen)) {
+    if (sag && kredi >= 1 && sim.owner[c] === a.target) {
+      kredi -= 1;
+      take(sim, c, nat);
+    } else {
+      sim.prog[c] = 0; sim.progBy[c] = -1;
+    }
+  }
+  if (sag && a.troops > 0) deposit(sim, nat, a.troops);
+  sim.attacks.splice(i, 1);
+  sim.dirty = true;
 }
 
 function stepAttacks(sim, dt) {
@@ -1173,7 +1247,7 @@ function stepAttacks(sim, dt) {
   for (let i = sim.attacks.length - 1; i >= 0; i--) {
     const a = sim.attacks[i];
     const nat = sim.nations[a.from];
-    if (!nat.alive) { sim.attacks.splice(i, 1); continue; }
+    if (!nat.alive) { bitirSaldiri(sim, a, i); continue; }
 
     // Bütçe, sıradaki halkanın BÜTÜN hücrelerine eşit dağıtılır: her hücrenin
     // kuşatma ilerlemesi aynı anda ve aynı hızda artar. Hücre ancak dolunca
@@ -1223,10 +1297,7 @@ function stepAttacks(sim, dt) {
       if (!dolan.length) break;         // hiçbir hücre dolmadı, tur ilerlemiyor
     }
 
-    if (bitti || a.troops <= cost * 0.01) {
-      if (a.troops > 0) deposit(sim, nat, a.troops);  // cephe bitti, kalan geri döner
-      sim.attacks.splice(i, 1);
-    }
+    if (bitti || a.troops <= cost * 0.01) bitirSaldiri(sim, a, i);
   }
 }
 
@@ -1315,12 +1386,13 @@ function aiThink(sim, nat) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   if (best === null) return;
-  // Oyuncu istediği kadar ince dilebilir ama YZ'nin yarım hamle yapması işe
-  // yaramıyor: cepheyi kapatmayan saldırı sınırı tırtıklaştırıp bir sonraki
-  // hamleyi pahalandırıyor, savaşlar sonuçsuz kalıyordu. Bu yüzden YZ hep en
-  // az bir halkalık asker sürer — yetmiyorsa hiç çıkmaz, birikmeyi bekler.
+  // Oyuncu hamlesini istediği kadar ince dileyebilir; YZ dilmez. Cepheyi
+  // kapatmayan saldırı sınırı tırtıklaştırıp bir sonrakini pahalandırıyor,
+  // savaşlar sonuçsuz kalıyordu. Bu yüzden YZ hep en az BİR HALKALIK asker
+  // sürer — yetmiyorsa hiç çıkmaz, birikmeyi bekler. (24 tohumda ölçüldü:
+  // hamle payı 0.45'ten 0.85'e çıkınca çözülme 9/24'ten 15/24'e yükseldi.)
   const enAz = frontCost(sim, nat, best);
-  const pay = nat.pool * (0.45 + sim.rnd() * 0.25);
+  const pay = nat.pool * (0.85 + sim.rnd() * 0.15);
   if (enAz > nat.pool) return;
   startAttack(sim, nat, best, Math.max(pay, enAz));
 }

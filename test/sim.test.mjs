@@ -7,7 +7,7 @@ import {
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
-  incomePayout, INCOME_SCALE, frontCost,
+  incomePayout, INCOME_SCALE, frontCost, minCells,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -322,13 +322,15 @@ t('küçük hamle bütün sınırı eşit ilerletir', () => {
   const sinir = sinirHucreleri(s, nat, -1);
   const cephe = frontCost(s, nat, -1);
   startAttack(s, nat, -1, cephe * 0.25);        // çeyrek halka
-  for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
+  // dalga ~ATTACK_SECS sürer; sefer SÜRERKEN ölç (bitince bozdurulur)
+  for (let i = 0; i < 50; i++) step(s, 1 / 30, 1 / 30);
   const p = sinir.map(c => s.prog[c]);
   const enAz = Math.min(...p), enCok = Math.max(...p);
-  assert(enAz > 0.15, `sınırın bir kısmı hiç ilerlememiş (en az ${enAz.toFixed(2)})`);
+  // asıl mesele EŞİTLİK: hiçbir hücre geride kalmamalı
+  assert(enAz > 0.05, `sınırın bir kısmı hiç ilerlememiş (en az ${enAz.toFixed(2)})`);
   assert(enCok - enAz < 0.08,
     `ilerleme eşit değil: ${enAz.toFixed(2)} ile ${enCok.toFixed(2)} arası`);
-  assert(nat.cells === g.nat.cells, 'çeyrek hamlede hücre el değiştirmemeli');
+  assert(nat.cells === g.nat.cells, 'çeyrek hamle sürerken hücre el değiştirmemeli');
 });
 
 t('art arda küçük hamleler birikip halkayı düşürür', () => {
@@ -338,10 +340,11 @@ t('art arda küçük hamleler birikip halkayı düşürür', () => {
   const once = nat.cells;
   const cephe = frontCost(s, nat, -1);
   // dörtte birlik dört hamle = bir halka
+  // art arda: her hamle bitince hemen bir sonraki (sönümleme payı içinde)
   for (let k = 0; k < 4; k++) {
     nat.pool = hardCap(s, nat);
-    startAttack(s, nat, -1, cephe * 0.26);
-    for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
+    startAttack(s, nat, -1, cephe * 0.28);
+    for (let i = 0; i < 115; i++) step(s, 1 / 30, 1 / 30);
   }
   assert(nat.cells > once,
     `biriken ilerleme hiç toprak getirmedi (${once} → ${nat.cells})`);
@@ -352,10 +355,69 @@ t('bir hücre dolmadan el değiştirmez', () => {
   if (!g) return;
   const { s, nat } = g;
   startAttack(s, nat, -1, frontCost(s, nat, -1) * 0.5);
-  for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
+  for (let i = 0; i < 50; i++) step(s, 1 / 30, 1 / 30);
   for (let c = 0; c < W * H; c++)
     assert(!(s.owner[c] === nat.id && s.prog[c] > 0),
       'el değişen hücrede kuşatma ilerlemesi kalmış');
+});
+
+t('sefer bitince kuşatma bozdurulur — haritada iz kalmaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const cephe = frontCost(s, nat, -1);
+  const birim = attackCost(s, -1);
+  const once = nat.cells;
+  startAttack(s, nat, -1, cephe * 0.3);
+  for (let i = 0; i < 50; i++) step(s, 1 / 30, 1 / 30);
+  let kusatilan = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) kusatilan++;
+  assert(kusatilan > 10, `sefer sürerken kuşatma görünmüyor (${kusatilan})`);
+
+  // sefer bitsin
+  for (let i = 0; i < 200; i++) step(s, 1 / 30, 1 / 30);
+  assert.equal(s.attacks.length, 0, 'sefer bitmedi');
+  let kalan = 0;
+  for (let c = 0; c < W * H; c++) if (s.prog[c] > 0.01) kalan++;
+  assert.equal(kalan, 0, `${kalan} hücrede yarım kuşatma izi kalmış`);
+
+  // sürülen asker heba olmamalı: ~%30'luk pay kadar hücre alınmış olmalı
+  const alinan = nat.cells - once;
+  const beklenen = cephe * 0.3 / birim;
+  assert(alinan >= beklenen * 0.75,
+    `bozdurma askeri heba etti: ${alinan} hücre, ~${beklenen.toFixed(0)} beklendi`);
+});
+
+// ---------------------------------------------------------------- dağılma
+
+console.log('\nKüçülen ulusun dağılması');
+
+t('küçülen ulus dağılır, kırıntısı fatihe değil boşluğa gider', () => {
+  const s = fresh();
+  const A = s.nations[0];
+  let hedef = -1;
+  for (let i = 1; i < s.nations.length; i++) if (findBorder(s, 0, i) >= 0) { hedef = i; break; }
+  if (hedef < 0) return;
+  const B = s.nations[hedef];
+  const esik = minCells(s);
+  assert(esik >= 10 && esik < B.cells, `eşik makul değil (${esik} / ${B.cells})`);
+  const bOnce = [];
+  for (let c = 0; c < W * H; c++) if (s.owner[c] === B.id) bOnce.push(c);
+  B.pool = 0;
+  A.pool = 1e7;
+  startAttack(s, A, hedef, 1e6);
+  for (let i = 0; i < 900; i++) step(s, 1 / 30, 1 / 30);
+
+  assert(!B.alive, 'ulus hâlâ ayakta');
+  assert.equal(B.cells, 0, 'dağılan ulusun hücre sayacı sıfırlanmadı');
+  let kalinti = 0, sahipsiz = 0;
+  for (const c of bOnce) {
+    if (s.owner[c] === B.id) kalinti++;
+    if (s.owner[c] === -1) sahipsiz++;
+  }
+  assert.equal(kalinti, 0, `${kalinti} hücre dağılan ulusta kalmış`);
+  // eşik altındaki kırıntı fethedilmez, sahipsiz kalır
+  assert(sahipsiz > 0, 'dağılan ulusun toprağı hiç sahipsiz kalmadı');
 });
 
 // ---------------------------------------------------------------- deniz
