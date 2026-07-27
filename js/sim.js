@@ -342,45 +342,84 @@ export function frontCosts(sim, nat) {
   return out;
 }
 
-// Saldırı başlat. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga
-// oradan eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
+// Cephe HEP tek parça ilerler: hamle tam halkalara yuvarlanır. Yarım halka
+// bırakmak sınırı tırtıklı, "nokta nokta" gösteriyordu — oysa halkanın ya
+// tamamı düşmeli ya hiçbiri. Yuvarlama kendiliğinden borçlandırmaz: tavanı
+// aşan halka sayısı kırpılır. 0 dönerse bir halkaya bile yetmiyordur.
+function halkayaYuvarla(halka, istenen, tavan) {
+  if (halka <= 0) return istenen;
+  if (halka > tavan) return 0;
+  let n = Math.max(1, Math.round(istenen / halka));
+  while (n > 1 && n * halka > tavan) n--;
+  return n * halka;
+}
+
+// Dalganın hızı, kalan askerin kaç hücreye yeteceğine göre ayarlanır: cephe
+// ölçekten bağımsız olarak hep ~`sure` saniyede akar, yani izlenebilir kalır.
+// Takviye geldiğinde de bundan geçilir — cephe hem büyür hem hızlanır.
+function cepheHizi(targetId, troops, cost) {
+  const sure = targetId < 0 ? ATTACK_SECS : WAR_SECS;
+  return Math.max(RATE_MIN, (troops / cost) / sure);
+}
+
+// Açık cepheye TAKVİYE: gelen asker var olan sefere eklenir ve dalganın hızı
+// kalan TOPLAM askere göre yeniden hesaplanır.
+//
+// Neden ayrı bir sefer nesnesi açmıyoruz: cephe zaten hedefle paylaşılan bütün
+// sınır hattı, yani ikinci sefer yeni bir yere yüklenmez — aynı hücrelerin
+// `prog`unu paylaşır. İki nesne iki ayrı `yatirim` defteri tutar; biri
+// kapanınca ötekinin kuşatma ilerlemesini haritadan siler ama alacağı defterde
+// kalır, iadede yoktan asker doğardı (ölçüldü: +128,6). Tek dalga, tek defter.
+export function reinforceAttack(sim, nat, atk, troops) {
+  if (!canAttack(sim, nat, atk.target)) return null;
+  if (sim.attacks.indexOf(atk) < 0 || atk.from !== nat.id) return null;
+  troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
+  const cost = attackCost(sim, atk.target);
+
+  // Halka bedeli CANLI cepheden okunur: sefer ilerledikçe sınır değişir, o
+  // yüzden takviye başlangıçtaki değil şu andaki cephe hattına yuvarlanır.
+  const border = frontOf(sim, nat, atk.target);
+  if (!border.length) return null;                  // cephe kapanmış
+  troops = halkayaYuvarla(border.length * cost, troops, Math.max(nat.pool, troops));
+  if (!troops) return null;                         // bir halkaya bile yetmiyor
+
+  nat.pool -= troops;
+  atk.troops += troops;
+  atk.start += troops;          // ilerleme çubuğu kalan/toplam okur
+  atk.rate = cepheHizi(atk.target, atk.troops, cost);
+  atk.takviye = (atk.takviye || 0) + 1;
+  sim.fx.push({ tip: 'attack', nat: nat.id, target: atk.target, takviye: true });
+  sim.dirty = true;
+  return atk;
+}
+
+// Sefere çık. Cephe, hedefle paylaştığın BÜTÜN sınır hattıdır: dalga oradan
+// eşit hızda içeri yayılır. Dokunulan hücre yalnızca hedefi seçer.
+// O hedefe zaten bir sefer sürüyorsa yenisi açılmaz — takviyeye çevrilir.
 export function startAttack(sim, nat, targetId, troops) {
   if (!canAttack(sim, nat, targetId)) return null;
-  // Aynı hedefe İKİNCİ sefer açılamaz. Cephe zaten hedefle paylaşılan bütün
-  // sınır hattıdır — ikinci sefer yeni bir yere yüklenmez, aynı hücrelerin
-  // `prog`unu paylaşır. Sonuç bozuk muhasebeydi: seferlerden biri kapanınca
-  // diğerinin kuşatma ilerlemesini haritadan siliyor ama `yatirim` alacağı
-  // duruyordu; iade sırasında yoktan asker üretiliyor, üstelik aynı askerle
-  // daha az toprak alınıyordu. Cepheyi büyütmek isteyen önce geri çağırmalı.
-  if (sim.attacks.some(a => a.from === nat.id && a.target === targetId)) return null;
+  const acik = sim.attacks.find(a => a.from === nat.id && a.target === targetId);
+  if (acik) return reinforceAttack(sim, nat, acik, troops);
+
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
   const cost = attackCost(sim, targetId);
 
   const border = frontOf(sim, nat, targetId);
   if (!border.length) return null;
 
-  // Cephe HEP tek parça ilerler: hamle tam halkalara yuvarlanır. Yarım halka
-  // bırakmak sınırı tırtıklı, "nokta nokta" gösteriyordu — oysa halkanın ya
-  // tamamı düşmeli ya hiçbiri. Yuvarlama kendiliğinden borçlandırmaz.
-  const halka = border.length * cost;
-  const tavan = Math.max(nat.pool, troops);
-  let kacHalka = Math.max(1, Math.round(troops / halka));
-  while (kacHalka > 1 && kacHalka * halka > tavan) kacHalka--;
-  if (halka > tavan) return null;                 // bir halkaya bile yetmiyor
-  troops = kacHalka * halka;
+  troops = halkayaYuvarla(border.length * cost, troops, Math.max(nat.pool, troops));
+  if (!troops) return null;                       // bir halkaya bile yetmiyor
 
   const layer = border;
   const inQ = new Set(layer);
 
   nat.pool -= troops;
-  // Yayılma hızı, askerin kaç hücreye yeteceğine göre ayarlanır: dalga
-  // ölçekten bağımsız olarak hep ~ATTACK_SECS sürer, yani izlenebilir kalır.
-  const sure = targetId < 0 ? ATTACK_SECS : WAR_SECS;
-  const rate = Math.max(RATE_MIN, (troops / cost) / sure);
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
-    troops, start: troops, layer, next: [], inQ, rate,
+    troops, start: troops, layer, next: [], inQ,
+    rate: cepheHizi(targetId, troops, cost),
     yatirim: 0,       // yarım halkaya yatırılmış, henüz toprağa dönmemiş asker
+    takviye: 0,       // cepheye kaç kez takviye gitti
   };
   sim.attacks.push(atk);
   sim.fx.push({ tip: 'attack', nat: nat.id, target: targetId });
@@ -532,7 +571,15 @@ function stepAttacks(sim, dt) {
         const ek = Math.min(pay, 1 - sim.prog[c]);
         sim.prog[c] += ek;
         harcanan += ek;
-        if (sim.prog[c] >= 0.999) dolan.push(c);
+        // Eşik 1.0 değil 0.999: prog bir Float32Array, tam 1'e oturmayabilir ve
+        // hücre hiç düşmezdi. Ama eşiği geçen hücre TAM bedelini ödemeli —
+        // yoksa hücre binde bir ucuza kapanır ve her halkada o kadar asker
+        // yoktan doğardı (84 hücrelik halkada ölçüldü: +0.4).
+        if (sim.prog[c] >= 0.999) {
+          harcanan += 1 - sim.prog[c];        // kalan dilimin bedeli de ödensin
+          sim.prog[c] = 1;
+          dolan.push(c);
+        }
       }
       butce -= harcanan;
       a.troops -= harcanan * cost;

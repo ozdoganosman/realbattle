@@ -523,30 +523,172 @@ t('ittifak bozulunca kuşatma izi de temizlenir', () => {
   assert.equal(s.attacks.filter(x => x.from === A.id).length, 0, 'sefer kapanmadı');
 });
 
-// Cephe zaten hedefle paylaşılan BÜTÜN sınır hattıdır; ikinci sefer yeni bir
-// yere yüklenmez, aynı hücrelerin `prog`unu paylaşırdı. Biri kapanınca
-// diğerinin kuşatmasını haritadan siliyor ama `yatirim` alacağı duruyordu.
-t('aynı hedefe ikinci sefer açılmaz', () => {
+// Cephe zaten hedefle paylaşılan BÜTÜN sınır hattıdır; ikinci sefer NESNESİ
+// yeni bir yere yüklenmez, aynı hücrelerin `prog`unu paylaşırdı. İki ayrı
+// `yatirim` defteri tutulunca biri kapanırken ötekinin kuşatmasını haritadan
+// siliyor ama alacağı defterde kalıyor, iadede yoktan asker doğuyordu.
+// Çözüm ikinci seferi reddetmek değil, TAKVİYEYE çevirmek: tek dalga, tek defter.
+t('aynı hedefe dokunmak ikinci sefer açmaz, takviye eder', () => {
   const g = genisSinirliSim();
   if (!g) return;
   const { s, nat } = g;
   const cephe = frontCost(s, nat, -1);
   nat.pool = hardCap(s, nat);
-  assert(startAttack(s, nat, -1, cephe * 2), 'ilk sefer başlamadı');
-  assert.equal(startAttack(s, nat, -1, cephe * 2), null, 'ikinci sefer de açıldı');
-  assert.equal(s.attacks.filter(a => a.from === nat.id).length, 1);
+  const a = startAttack(s, nat, -1, cephe * 2);
+  assert(a, 'ilk sefer başlamadı');
+  const b = startAttack(s, nat, -1, cephe * 2);
+  assert.equal(b, a, 'takviye var olan sefere gitmedi');
+  assert.equal(s.attacks.filter(x => x.from === nat.id).length, 1, 'ikinci sefer açıldı');
+  assert.equal(a.takviye, 1, 'takviye sayacı işlemedi');
 });
 
-t('ikinci sefer denemesi hazineye dokunmaz', () => {
+t('takviye cephedeki asker sayısını artırır', () => {
   const g = genisSinirliSim();
   if (!g) return;
   const { s, nat } = g;
   const cephe = frontCost(s, nat, -1);
   nat.pool = hardCap(s, nat);
+  const a = startAttack(s, nat, -1, cephe * 2);
+  const cepheOnce = a.troops, havuzOnce = nat.pool;
+  startAttack(s, nat, -1, cephe * 3);
+  const giden = havuzOnce - nat.pool;
+  assert(giden > 0, 'takviye hazineden asker düşürmedi');
+  assert(Math.abs((a.troops - cepheOnce) - giden) < 1e-6,
+    `hazineden ${giden.toFixed(1)} çıktı ama cepheye ${(a.troops - cepheOnce).toFixed(1)} eklendi`);
+  assert(a.start > cepheOnce, 'toplam taahhüt güncellenmedi (ilerleme çubuğu bozulur)');
+});
+
+// "cephenin gidişi" = a.rate. Takviye gelince dalga kalan TOPLAM askere göre
+// yeniden hesaplanmalı, yoksa iki katı asker eski hızla akar ve cephe sürüncemede kalır.
+t('takviye cephenin hızını yeniden hesaplar', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  const cephe = frontCost(s, nat, -1);
+  const birim = attackCost(s, -1);
+  nat.pool = hardCap(s, nat);
+  const a = startAttack(s, nat, -1, cephe * 2);
+  const hizOnce = a.rate;
   startAttack(s, nat, -1, cephe * 2);
-  const sonra = nat.pool;
-  startAttack(s, nat, -1, cephe * 2);
-  assert.equal(nat.pool, sonra, 'reddedilen sefer yine de asker düşürdü');
+  assert(a.rate > hizOnce, `hız güncellenmedi: ${hizOnce.toFixed(2)} → ${a.rate.toFixed(2)}`);
+  // dalga yine ~ATTACK_SECS saniyede akmalı (taban hız devrede değilse)
+  const beklenen = (a.troops / birim) / 3.6;
+  if (beklenen > 7) assert(Math.abs(a.rate - beklenen) < 1e-6,
+    `hız ${a.rate.toFixed(2)}, beklenen ${beklenen.toFixed(2)}`);
+});
+
+// Takviye, yeni seferle AYNI kurallara tabi: borçluyken çıkılamaz, borç
+// tavanı aşılamaz, bir halkaya yetmeyen talep reddedilir.
+t('borçluyken takviye gönderilemez', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  nat.pool = hardCap(s, nat);
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1));
+  const cepheOnce = a.troops;
+  nat.pool = -1;                                  // borçlu
+  assert.equal(startAttack(s, nat, -1, frontCost(s, nat, -1) * 5), null,
+    'borçluyken takviye engellenmedi');
+  assert.equal(a.troops, cepheOnce, 'reddedilen takviye cepheye yine de eklendi');
+});
+
+t('bir halkaya yetmeyen takviye reddedilir', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  nat.pool = hardCap(s, nat);
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1));
+  nat.pool = 0;                                   // hazine boş
+  const cepheOnce = a.troops;
+  assert.equal(startAttack(s, nat, -1, 1), null, 'yetersiz takviye kabul edildi');
+  assert.equal(nat.pool, 0, 'reddedilen takviye hazineye dokundu');
+  assert.equal(a.troops, cepheOnce, 'reddedilen takviye cepheye eklendi');
+});
+
+// Asıl güvence bu: takviye ne asker üretmeli ne yutmalı. Değişmez —
+//   havuz + cephedeki asker + haritadaki kuşatma + alınan toprağın bedeli
+// büyüme tiki dışında SABİT kalmalı. Takviye değeri havuzdan cepheye taşır,
+// toplamı değiştirmez.
+// Bu ölçüt `stepAttacks`'teki 0.999 eşiğinin hücreleri binde bir ucuza
+// kapatmasını da yakalar (84 hücrelik halkada +0.4 asker yoktan doğuyordu).
+t('takviye yoktan asker üretmez', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  for (const n of s.nations) n.ai = false;        // dışarıdan toprak el değiştirmesin
+  const K = attackCost(s, -1);
+  const c0 = nat.cells;
+  const kusatma = () => {
+    let p = 0;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c];
+    return p * K;
+  };
+  const V = () => nat.pool + s.attacks.filter(a => a.from === nat.id)
+    .reduce((t, a) => t + a.troops, 0) + kusatma() + (nat.cells - c0) * K;
+
+  const halka = frontCost(s, nat, -1);
+  nat.pool = hardCap(s, nat);      // hazine BİR KEZ dolar; döngü içinde asker
+  startAttack(s, nat, -1, halka * 3);   // eklemek ölçülen değeri bozardı
+  let once = V(), enBuyuk = 0, takviye = 0;
+  for (let i = 0; i < 600; i++) {
+    const tikOnce = s.tickNo;
+    step(s, 1 / 60, 1 / 60);
+    if (i % 45 === 0 && startAttack(s, nat, -1, halka * 2)) takviye++;
+    const v = V();
+    // büyüme tikinin yattığı kareyi atla — orada havuz bilerek büyür
+    if (s.tickNo === tikOnce) enBuyuk = Math.max(enBuyuk, Math.abs(v - once));
+    once = v;
+  }
+  assert(takviye >= 3, `takviye gitmedi (${takviye}) — ölçüm boş`);
+  assert(enBuyuk < 0.01,
+    `bir karede ${enBuyuk.toFixed(4)} asker yoktan doğdu/yok oldu (${takviye} takviye)`);
+});
+
+// Hücre `prog >= 0.999`'da düşmüş sayılır (prog bir Float32Array, tam 1'e
+// oturmayabilir). Eşiği geçen hücre TAM bedelini ödemezse her halkada binde
+// bir asker yoktan doğar. Rastlantıya bırakmadan kuralım: cepheyi eşiğin hemen
+// altına getirip, eşiği ancak aşacak kadar küçük bir bütçeyle bir kare işlet.
+t('eşiği geçen hücre tam bedelini öder', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  for (const n of s.nations) n.ai = false;
+  const K = attackCost(s, -1);
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 3);
+  assert(a, 'sefer başlamadı');
+  const canli = a.layer.filter(c => s.owner[c] === -1);
+  assert(canli.length > 20, `cephe çok kısa (${canli.length})`);
+  for (const c of canli) { s.prog[c] = 0.9985; s.progBy[c] = nat.id; }
+  a.yatirim = canli.length * 0.9985 * K;          // defter haritayla hizalansın
+  a.rate = canli.length * 0.001 * 60;             // pay ≈ 0.001 → 0.9995'te düşer
+  s.tickAcc = 0;                                  // tek karede büyüme tiki olmasın
+
+  const c0 = nat.cells;
+  const kusatma = () => {
+    let p = 0;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c];
+    return p * K;
+  };
+  const V = () => nat.pool + s.attacks.filter(x => x.from === nat.id)
+    .reduce((t, x) => t + x.troops, 0) + kusatma() + (nat.cells - c0) * K;
+
+  const once = V();
+  step(s, 1 / 60, 1 / 60);
+  assert(nat.cells > c0, 'kurulum tutmadı — hiç hücre düşmedi');
+  const sapma = V() - once;
+  assert(sapma < 0.01,
+    `eşikte ${sapma.toFixed(4)} asker yoktan doğdu (${nat.cells - c0} hücre düştü)`);
+});
+
+t('takviye borç tavanını aşamaz', () => {
+  const g = genisSinirliSim();
+  if (!g) return;
+  const { s, nat } = g;
+  nat.pool = hardCap(s, nat);
+  startAttack(s, nat, -1, frontCost(s, nat, -1));
+  startAttack(s, nat, -1, 1e9);                   // kaydıraç sonuna dayalı
+  assert(nat.pool >= -maxDebt(s, nat) - 1e-6,
+    `borç tavanı aşıldı: ${nat.pool.toFixed(1)} < ${(-maxDebt(s, nat)).toFixed(1)}`);
 });
 
 // Seferin `yatirim` defteri = haritada FİİLEN duran kuşatmanın bedeli. İkinci

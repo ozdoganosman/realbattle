@@ -8,7 +8,7 @@ import {
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   INCOME_SCALE, incomePayout,
-  startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts,
+  startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts,
   formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
@@ -226,9 +226,11 @@ function showChip(sx, sy, o) {
   let uyari = '';
   if (o >= 0 && allied(me, sim.nations[o])) uyari = '<i>müttefikin</i>';
   else if (locked(sim, me)) uyari = '<i>ihanet cezan sürüyor</i>';
+  // Cephe açıksa dokunuş yeni sefer açmaz, var olana takviye gider.
+  const acik = sim.attacks.some(a => a.from === me.id && a.target === o);
   chip.innerHTML = `<b>${ad}</b>` +
     (uyari ? ` — ${uyari}`
-           : ` · <b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
+           : ` · ${acik ? '<i>takviye</i> ' : ''}<b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
   const r = wrap.getBoundingClientRect();
   chip.style.left = clamp(sx - r.left, 70, r.width - 70) + 'px';
@@ -268,22 +270,27 @@ function tapAttack(sx, sy) {
   // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
   const istenen = commitOf(me);
   cepheAn = -9e9;                            // hedef değişecek, bedelleri tazele
+  // Cephe zaten açıksa startAttack yeni sefer açmaz, takviyeye çevirir —
+  // önceki askeri not al ki ne kadar gittiğini yazabilelim.
+  const acik = sim.attacks.find(a => a.from === me.id && a.target === target);
+  const onceki = acik ? acik.troops : 0;
   const atk = startAttack(sim, me, target, istenen);
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
     // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
-    let mesaj;
-    if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
-      mesaj = 'Bu cephe zaten açık';
-    } else if (frontCost(sim, me, target) > 0) {
-      mesaj = `Bu cepheyi bir hücre itmek ${fmt(frontCost(sim, me, target))} asker `
-            + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan';
-    } else {
-      mesaj = 'Sınırın buraya değmiyor';
-    }
-    flash(mesaj);
+    const halka = frontCost(sim, me, target);
+    flash(halka > 0
+      ? `Bu cepheyi bir hücre itmek ${fmt(halka)} asker `
+        + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan'
+      : 'Sınırın buraya değmiyor');
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
+  }
+  if (acik) {
+    const ad = target < 0 ? 'boş toprak' : sim.nations[target].name;
+    // Başa ⚔ koymuyoruz: Georgia'da geri çağırma ✕'ine benziyor.
+    flash(`${ad} cephesine ${fmt(atk.troops - onceki)} asker takviye — `
+        + `cephede toplam ${fmt(atk.troops)} asker`, 'good');
   }
   cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
@@ -293,13 +300,15 @@ function tapAttack(sx, sy) {
   refreshTop(); refreshFronts();
 }
 
-function flash(text) {
+// tip: 'warn' engel/uyarı (kırmızı), 'good' olumlu geri bildirim (yeşil)
+function flash(text, tip = 'warn') {
   const el = $('hint-bar');
   el.textContent = text;
-  el.classList.add('warn');
+  el.classList.remove('warn', 'good');
+  el.classList.add(tip);
   clearTimeout(flash._t);
   flash._t = setTimeout(() => {
-    el.classList.remove('warn');
+    el.classList.remove('warn', 'good');
     el.innerHTML = 'Saldırmak için düşman ya da boş toprağa <b>dokun</b>.';
   }, 2400);
 }
@@ -542,7 +551,9 @@ function refreshFronts() {
     row.className = 'front';
     const pct = clamp(a.troops / a.start, 0, 1);
     row.innerHTML =
-      `<div class="front-top"><span>${ad}</span><b>${fmt(a.troops)}</b></div>` +
+      `<div class="front-top"><span>${ad}` +
+      (a.takviye ? ` <span class="floor">+${a.takviye} takviye</span>` : '') +
+      `</span><b>${fmt(a.troops)}</b></div>` +
       `<div class="bar"><i style="width:${pct * 100}%;background:${me.color}"></i></div>`;
     row.appendChild(mkBtn('Geri çağır', 'bad', () => {
       cancelAttack(sim, a); refreshFronts(); refreshTop();
@@ -869,7 +880,7 @@ window.__rb = {
   // arayüzün "kaç asker gidecek" hesabı — test bunu etiketle karşılaştırıyor
   commitOf, gidecek,
   api: {
-    startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
+    startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome, incomePayout,
   },

@@ -32,7 +32,7 @@ indirmek oyunu kabaca iki katına çıkarır.
 | **Borçlanma** | Borç bölgesi kaydıracın son diliminde (kırmızı) sabittir — oraya çekmeden borçlanmazsın. Borç sınırı toprağın ~**29 katı** — sert tavanın %17'si, tavanla birlikte ölçeklenir. Hazinen bittiğinde de saldırabilirsin, ama bu bilinçli bir tercihtir: askerin eksiye düşer, gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
 | **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 4 askere gelir, hazinesi tıka basa dolu olanınki **51** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
 | **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
-| **Tek hedef, tek cephe** | Bir hedefe karşı aynı anda **tek** sefer sürer. Cephe zaten o hedefle paylaştığın bütün sınır hattı olduğu için ikinci bir sefer yeni bir yere yüklenmez — aynı hücreleri kuşatır. Daha çok asker sürmek istersen önce geri çağır, sonra gücü yükseltip yeniden çık. |
+| **Takviye** | Süren bir cepheye tekrar dokunmak **ikinci sefer açmaz, takviye gönderir**: asker aynı dalgaya eklenir ve **cephenin hızı kalan toplam askere göre yeniden hesaplanır** — cephe hem büyür hem hızlanır. Bir hedefe karşı hep tek dalga sürer, çünkü cephe zaten o hedefle paylaştığın bütün sınır hattı; ikinci bir dalga yeni bir yere yüklenmez, aynı hücreleri kuşatırdı. Takviye de tam halkalara yuvarlanır ve halka bedeli **o anki** cepheden okunur. |
 | **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner (hazine tavanı taşarsa fazlası kırpılır). |
 | **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
 | **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** ve **süren bütün seferleri o anda geri çağrılır** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
@@ -52,6 +52,8 @@ haritası gibi dursun diye varlar.
 - Harita üstündeki **cephe göstergesi** her zaman açıktır: kime yükleniyorsun,
   kim sana yükleniyor, halka ne kadar doldu, cephede kaç asker kaldı — ve ✕ ile
   seferi oradan geri çağırabilirsin
+- Süren cepheye tekrar dokunmak **takviye** gönderir; şerit ne kadar asker
+  gittiğini ve cephede toplam kaç asker olduğunu yeşille yazar
 - Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
@@ -86,8 +88,8 @@ ortamlar için yalnız gövde içeriğini taşır.
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (77)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (52)
+npm test               # başsız simülasyon (83)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (56)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
 ```

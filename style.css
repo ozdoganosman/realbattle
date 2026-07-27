@@ -108,6 +108,8 @@ body {
   pointer-events: none; transition: background .2s var(--ease);
 }
 #hint-bar.warn { background: rgba(150,42,26,.94); color: #ffe4d4; }
+/* olumlu geri bildirim — takviye gibi engel olmayan haberler */
+#hint-bar.good { background: rgba(62,102,44,.94); color: #e6f6d8; }
 
 #zoom-ctl {
   position: absolute; right: 10px; top: 10px; z-index: 4;
@@ -234,6 +236,7 @@ body {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 13.5px; margin-bottom: 6px; font-variant-numeric: tabular-nums;
 }
+.front-top .floor { color: var(--dim); font-size: 11.5px; }
 .bar {
   height: 6px; border-radius: 3px; background: #d6c39c;
   overflow: hidden; margin-bottom: 7px;

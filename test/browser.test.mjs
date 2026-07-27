@@ -137,6 +137,44 @@ check('tıklama sarsıntı tetikliyor', afterClick.shake > 0, `shake=${afterClic
 check('süren seferler paneli açıldı',
   !(await page.$eval('#sec-fronts', el => el.classList.contains('hidden'))));
 
+// Aynı hedefe tekrar dokunmak İKİNCİ cephe açmaz — açık cepheye takviye gider
+// ve dalganın hızı kalan toplam askere göre yeniden hesaplanır.
+const takviye = await page.evaluate(() => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  window.__rb.ui.speed = 0;                 // ölçüm sırasında dünya dursun
+  me.pool = api.hardCap(sim, me);           // ilk saldırı hazineyi boşalttı
+  const a = sim.attacks.find(x => x.from === me.id);
+  return a ? { hedef: a.target, tr: a.troops, rate: a.rate, tak: a.takviye, n: sim.attacks.length } : null;
+});
+await page.mouse.click(target.sx, target.sy);
+await page.waitForTimeout(150);
+const takviyeSonra = await page.evaluate(() => {
+  const { sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  const mine = sim.attacks.filter(x => x.from === me.id);
+  const a = mine[0];
+  return {
+    cepheSayisi: mine.length, tr: a.troops, rate: a.rate, tak: a.takviye,
+    hud: document.querySelectorAll('#fronts-hud .fr').length,
+    ipucu: document.getElementById('hint-bar').textContent,
+    iyiRenk: document.getElementById('hint-bar').classList.contains('good'),
+  };
+});
+await page.evaluate(() => { window.__rb.ui.speed = 1; });
+check('aynı hedefe tekrar dokunmak ikinci cephe açmıyor',
+  takviyeSonra.cepheSayisi === 1 && takviyeSonra.hud === 1,
+  JSON.stringify(takviyeSonra));
+check('takviye cephedeki askeri artırıyor',
+  takviyeSonra.tr > takviye.tr && takviyeSonra.tak === takviye.tak + 1,
+  `${Math.round(takviye.tr)} → ${Math.round(takviyeSonra.tr)}`);
+check('takviye cephenin hızını yeniden hesaplıyor',
+  takviyeSonra.rate > takviye.rate,
+  `${takviye.rate.toFixed(2)} → ${takviyeSonra.rate.toFixed(2)}`);
+check('takviye olumlu geri bildirim veriyor',
+  takviyeSonra.iyiRenk && /takviye/i.test(takviyeSonra.ipucu),
+  JSON.stringify(takviyeSonra.ipucu));
+
 // Cephe göstergesi harita üstünde, panelden bağımsız olarak HER ZAMAN görünür.
 check('cephe göstergesi seferi listeliyor', await page.evaluate(() => {
   const el = document.getElementById('fronts-hud');
