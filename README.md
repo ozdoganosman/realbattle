@@ -38,13 +38,15 @@ indirmek oyunu kabaca iki katına çıkarır.
 | **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** ve **süren bütün seferleri o anda geri çağrılır** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
 | **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. Kural iki yönlüdür: lidere teklif götüremezsin, lider konumundaysan sana da kimse yanaşmaz. |
 | **Şehirler** | Haritadaki isimli yerleşimler **oynanışa girer**. Her şehrin bir büyüklüğü var; sahibine büyüklüğüyle orantılı **gelir** katar ve çevresindeki hücreleri **pahalandırır** — merkezde bedel **3.4 kata** kadar çıkar, halkanın kenarında 1'e iner. Surlar sahibinden bağımsızdır: şehir kimin elindeyse onu korur. Zengin bölge aynı zamanda sert bölgedir, gelir bedavaya gelmez. |
+| **Deniz çıkarması** | Cephe yalnız kara komşuluğuyla kurulmaz: hedefin **en fazla 9 deniz hücresi** ötedeki kıyısına da yüklenilebilir. Boğazın karşısından alınan hücreler **2.5 kat** pahalıdır — çıkarma bedava değildir. Ceza yalnız denizden yüklenen ilk halkaya biner; çıkarma tutunca içeri doğru yayılma normal bedele döner. Bir hücrenin kara komşuluğu varsa zaten çıkarma sayılmaz. |
+| **Adalar** | Kıyı açıklarında, **boğaz menzili içinde** ada kuşakları var: karanın ~**%3.5**'i, harita başına ortalama 4 tane 200+ hücrelik ada. Menzil dışına ada kurulmaz — ulaşılamaz bir ada haritada sonsuza dek boş bir leke demektir. Ada bir başlangıç yurduna da denk gelebilir: o krallık boğazı geçene kadar kendi adasına sıkışır. |
 | **Kuşatma şehirde yavaşlar** | Cephe pahalı bir halkaya girince **yavaşlar**: iki kat pahalı halka yarı hızla dolar. Halkanın *içinde* ilerleme yine eşittir — sınır tek parça hareket eder — ama surlara dayanan cephe gözle görülür biçimde takılır. |
 
 Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
 Haritadaki **arazi tipleri** (ova/orman/dağ) ve yükseklik hâlâ tamamen
-dekoratiftir — yalnız rengi değiştirirler. Oynanışa giren tek harita öğesi
-şehirlerdir.
+dekoratiftir — yalnız rengi değiştirirler. Oynanışa giren harita öğeleri
+**şehirler** ve **kıyı şekli**dir (adalar, boğazlar).
 
 ### Şehirler ne kadar değer?
 
@@ -71,6 +73,31 @@ kalma oranı düz araziden ayırt edilemiyordu. Yavaşlama eklenince kale hücre
 **1.38 kat** daha sık sınırda kalır oldu ve etki savunma gücüyle birlikte tek
 yönlü arttı (1.03 → 1.07 → 1.19 → 1.38).
 
+### Deniz çıkarması ne kadar değiştirdi?
+
+Çıkarma önce **tek başına** eklendi ve ölçüldü: neredeyse hiçbir şey yapmıyordu.
+Oyun başına 60 köprübaşı hücresi (karanın binde biri), haritanın paylaşılma
+süresi birebir aynı (84 sn / 84 sn). Sebebi mekanikte değil haritadaydı —
+üretici **tek parça bir kıta** veriyordu: karanın %99–100'ü tek bağlantılı
+parça, 100+ hücrelik ada yok. Yani "Britanya, Bizans, İskandinavya oyun dışı"
+teşhisi bu üretici için yanlıştı: ortada ada yoktu.
+
+Bu yüzden adalar da üretiliyor. Sonuç:
+
+| | boğaz kapalı | boğaz açık |
+|---|---|---|
+| Oyun sonunda sahipsiz kalan kara | **%2.27** | **%0.30** |
+| Çıkarma seferi / oyun | — | **37** |
+
+12 tohumda ölçüldü: boğazsız bir dünyada ada toprağı **sonsuza dek** boş kalıyor;
+boğazlarla ulaşılamaz toprak **%87 azalıyor**. Denge korundu — 10 tohumun
+10'unda zafer eşiğine ulaşılıyor, ortalama 2.27 dk.
+
+Ada üretiminin tek sert kuralı var: **menzil dışına ada kurulmaz.** Kısıt
+kapatılıp 30 tohum tarandığında 570 adanın 3'ü hiçbir boğaza bağlanamıyordu
+(tohum 7, 20, 21) — ulaşılamaz ada, mekaniği hiç eklememekten beterdir, çünkü
+haritada asla dolmayan bir leke bırakır. Testi tam da o tohumlarla koşuyor.
+
 **Rapor edilen, düzeltilmeyen:** YZ'ye şehir iştahı katsayısı eklendi
 (`nat.cityGreed`) ama kontrollü A/B'de **ölçülebilir etkisi çıkmadı**
 (30 tohum × 2 atama, 8'e 8 ulus: fark −0.09 puan, t ≈ −0.12). Nedeni yapısal:
@@ -92,6 +119,8 @@ oturduğunu değiştiriyor, hedef seçimini değil.
 - Şehir noktası **sahibinin rengiyle** dolar; surların içi haritada koyulaşır,
   yani pahalı toprak gözle seçilir ve cephenin neden orada takıldığı görülür
 - İmleci bir şehrin üstüne getirince adı, halkasının içindeyken bedel çarpanı yazar
+- Boğazın karşısına yükleniyorsan hedef baloncuğu ⚓ **deniz çıkarması** der;
+  cephe listesinde de çıkarma seferleri ⚓ ile işaretlidir
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır
@@ -118,14 +147,14 @@ npm run build
 ```
 
 `dist/realbattle.html` — bütün modüllerin ve CSS'in tek dosyaya paketlenmiş,
-kendi başına açılan hâli (~118 KB). Dış bağımlılığı yok; doğrudan çift
+kendi başına açılan hâli (~128 KB). Dış bağımlılığı yok; doğrudan çift
 tıklayarak da açılır. `dist/artifact.html` ise `<head>`'i kendi sağlayan
 ortamlar için yalnız gövde içeriğini taşır.
 
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (90)
+npm test               # başsız simülasyon (97)
 npm run test:browser   # masaüstü tarayıcı, gerçek fare (59)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
@@ -150,8 +179,9 @@ PAGE=/dist/realbattle.html npm run test:mobile
 
 ```
 js/world.js         Harita üretimi. Seed'den deterministik.
-                    Arazi tipi yalnız çizim içindir; ŞEHİRLER oynanışa girer
-                    (cityAt / cityDef alanları tohumdan bir kez hesaplanır).
+                    Arazi tipi yalnız çizim içindir; ŞEHİRLER ve ADALAR
+                    oynanışa girer. Tohumdan bir kez hesaplanan alanlar:
+                    cityAt/cityDef (şehir) ve straitHead/To/Next (boğazlar).
 js/sim.js           Bütün oyun kuralları. DOM yok, Math.random yok, Date yok.
                     Tek giriş noktası: createSim(seed) + step(dt, realDt).
 js/render.js        Canvas çizimi ve efektler. Simülasyonu sadece okur.

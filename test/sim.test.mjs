@@ -8,8 +8,9 @@ import {
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   incomePayout, INCOME_SCALE, frontCost, frontStats, cellCost, minCells, ALLY_SECS,
+  LANDING_MULT,
 } from '../js/sim.js';
-import { W, H, idx } from '../js/world.js';
+import { W, H, idx, STRAIT_MAX } from '../js/world.js';
 
 let pass = 0, fail = 0;
 function t(ad, fn) {
@@ -273,6 +274,12 @@ function genisSinirliSim() {
     }
   }
   if (bas < 0) return null;
+  // Bu kurulum KARA cephesini yalıtır. Şeridin üst sırası kıyıya denk gelip
+  // cepheye bir çıkarma hücresi sokabiliyor (ölçüldü: 130 hücrenin 1'i) ve
+  // çıkarma hücresi LANDING_MULT katı fiyatlandığı için buradaki düz fiyat
+  // modeli sahte sapma gösteriyordu. Boğaz bağları kapatılıyor; çıkarmanın
+  // korunumu kendi testinde ('deniz çıkarması yoktan asker üretmez') ölçülür.
+  s.world.straitHead.fill(-1);
   const bx = bas % W, by = (bas / W) | 0;
   for (const n of s.nations) n.cells = 0;
   s.owner.fill(-1);
@@ -1295,6 +1302,208 @@ t('asker havuzu tavanı aşmaz, negatife düşmez', () => {
       assert(n.pool <= troopCap(s, n) + 1, `${n.name} tavanı aştı`);
     }
   }
+});
+
+// ---------------------------------------------------------------- deniz
+
+console.log('\nDeniz çıkarması');
+
+// Kara parçalarını çıkar: [0] ana kütle, gerisi ada.
+function karaParcalari(s) {
+  const gor = new Uint8Array(W * H), ps = [];
+  for (let c0 = 0; c0 < W * H; c0++) {
+    if (!s.world.isLand[c0] || gor[c0]) continue;
+    const p = [], yig = [c0];
+    gor[c0] = 1;
+    while (yig.length) {
+      const c = yig.pop();
+      p.push(c);
+      const x = c % W, nb = [];
+      if (x > 0) nb.push(c - 1);
+      if (x < W - 1) nb.push(c + 1);
+      if (c >= W) nb.push(c - W);
+      if (c < W * (H - 1)) nb.push(c + W);
+      for (const m of nb) if (!gor[m] && s.world.isLand[m]) { gor[m] = 1; yig.push(m); }
+    }
+    ps.push(p);
+  }
+  return ps.sort((a, b) => b.length - a.length);
+}
+
+// EN KRİTİK İNVARYANT: menzil dışında ada üretilmemeli. Ulaşılamaz bir ada,
+// haritada sonsuza dek boş kalan bir lekedir — mekaniği hiç eklememekten beter.
+// Tohumlar rastgele seçilmedi: 7, 20 ve 21 menzil kısıtı kaldırıldığında
+// ULAŞILAMAZ ada üreten tohumlardır (30 tohum tarandı, 570 adanın 3'ü menzil
+// dışına düşüyordu). Kısıtın dişi bu tohumlarda görünür.
+t('her ada boğaz menzilinde — ulaşılamaz ada üretilmiyor', () => {
+  let adaSayisi = 0;
+  for (const seed of [7, 20, 21, 11, 33]) {
+    const s = createSim(seed);
+    const ps = karaParcalari(s);
+    for (const ada of ps.slice(1)) {
+      adaSayisi++;
+      const bagli = ada.some(c => s.world.straitHead[c] >= 0);
+      assert(bagli, `tohum ${seed}: ${ada.length} hücrelik ada hiçbir boğaza bağlı değil`);
+    }
+  }
+  assert(adaSayisi > 20, `6 tohumda yalnız ${adaSayisi} ada üretildi — ada üreticisi çalışmıyor`);
+});
+
+t('boğaz bağları çift yönlü', () => {
+  const s = createSim(11);
+  const { straitHead, straitTo, straitNext } = s.world;
+  let denetlenen = 0;
+  for (let c = 0; c < W * H; c++) {
+    for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+      const o = straitTo[e];
+      let geri = false;
+      for (let f = straitHead[o]; f >= 0; f = straitNext[f]) if (straitTo[f] === c) { geri = true; break; }
+      assert(geri, `${c} → ${o} var ama tersi yok`);
+      denetlenen++;
+    }
+  }
+  assert(denetlenen > 100, `yalnız ${denetlenen} bağ denetlendi`);
+});
+
+t('boğaz yalnız kısa geçitleri bağlar', () => {
+  const s = createSim(11);
+  const { straitHead, straitTo, straitNext, isLand } = s.world;
+  for (let c = 0; c < W * H; c += 37) {
+    for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+      const o = straitTo[e];
+      const d = Math.abs(c % W - o % W) + Math.abs(((c / W) | 0) - ((o / W) | 0));
+      assert(d <= STRAIT_MAX + 2, `${d} hücrelik geçit bağlanmış (üst sınır ${STRAIT_MAX})`);
+      assert(isLand[c] && isLand[o], 'boğaz denize bağlanmış');
+    }
+  }
+});
+
+// Tek hücrelik bir yurttan cephe kur: kara komşuları normal, boğazın karşısı
+// ÇIKARMA. İkisi bir arada olmalı — çıkarma kara cephesini kapatmaz.
+function bogazliSim() {
+  for (let seed = 1; seed <= 40; seed++) {
+    const s = fresh(seed);
+    for (let m = 0; m < W * H; m++) {
+      if (s.world.straitHead[m] < 0) continue;
+      const nat = s.nations[0];
+      s.owner.fill(-1);
+      for (const n of s.nations) { n.cells = 0; n.cityScore = 0; n.cityCount = 0; n.ai = false; }
+      s.owner[m] = nat.id; nat.cells = 1;
+      const ci = s.world.cityAt[m];
+      if (ci >= 0) { nat.cityScore = s.world.cities[ci].size; nat.cityCount = 1; }
+      nat.pool = 1e7;
+      return { s, nat, m };
+    }
+  }
+  return null;
+}
+
+t('cephe boğazın karşı kıyısına da kurulur', () => {
+  const g = bogazliSim();
+  assert(g, 'boğazlı kurulum bulunamadı');
+  const { s, nat, m } = g;
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 2);
+  assert(a, 'sefer açılmadı');
+  assert(a.amfibi.size > 0, 'boğazın karşısı cepheye girmedi — çıkarma yok');
+  // çıkarma hücreleri gerçekten karşı kıyıda: bize kara komşusu OLMAMALI
+  for (const c of a.amfibi) {
+    const x = c % W, nb = [];
+    if (x > 0) nb.push(c - 1);
+    if (x < W - 1) nb.push(c + 1);
+    if (c >= W) nb.push(c - W);
+    if (c < W * (H - 1)) nb.push(c + W);
+    assert(!nb.some(n => s.owner[n] === nat.id),
+      'kara komşuluğu olan hücre çıkarma sayılmış — boşuna ceza ödenir');
+  }
+});
+
+// Ölçüt LANDING_MULT'ı içe aktarıp kendisiyle karşılaştırmamalı — öyle olursa
+// sabit 1'e çekildiğinde test yine geçer (denendi: geçti). Karşılaştırma
+// MUTLAK: aynı hücreler cezasız fiyatlansa ne tutardı?
+t('çıkarma hücresi kara hücresinden pahalı', () => {
+  const g = bogazliSim();
+  assert(g, 'boğazlı kurulum bulunamadı');
+  const { s, nat } = g;
+  const bogazli = frontCost(s, nat, -1);
+  const st = frontStats(s, nat).get(-1);
+  assert(st.cikarma > 0, 'cephede çıkarma hücresi görünmüyor');
+  // çıkarma hücrelerinin cezasız bedeli
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1));
+  assert(a && a.amfibi.size > 0, 'çıkarma cephesi kurulamadı');
+  let cezasiz = 0;
+  for (const c of a.amfibi) cezasiz += attackCost(s, -1) * s.world.cityDef[c];
+  cancelAttack(s, a);
+  // aynı cephe, boğazlar kapalıyken: çıkarma hücreleri hiç girmez
+  s.world.straitHead.fill(-1);
+  const karasal = frontCost(s, nat, -1);
+  const fark = bogazli - karasal;
+  assert(fark > cezasiz * 1.5,
+    `çıkarma cezası yok sayılabilir: fark ${fark.toFixed(1)}, cezasız ${cezasiz.toFixed(1)}`);
+});
+
+// Korunum, çıkarma ceza katsayısıyla birlikte. `amfibi` kümesi bir seferin
+// ömrü boyunca YALNIZ BÜYÜR (takviyede sıfırlanmaz), bu yüzden test hücrenin
+// ödediği fiyatı düşüşünden sonra da bilebiliyor — kümenin sıfırlanması hem
+// bu ölçümü imkânsız kılar hem de defteri haritadan ayırırdı.
+t('deniz çıkarması yoktan asker üretmez', () => {
+  const g = bogazliSim();
+  assert(g, 'boğazlı kurulum bulunamadı');
+  const { s, nat } = g;
+  const K = attackCost(s, -1);
+  const cd = s.world.cityDef;
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 6);
+  assert(a, 'sefer açılmadı');
+  assert(a.amfibi.size > 0, 'çıkarma yok — ölçüm boş');
+  const fiyat = c => K * cd[c] * (a.amfibi.has(c) ? LANDING_MULT : 1);
+  const toprak = () => {
+    let v = 0;
+    for (let c = 0; c < W * H; c++) if (s.owner[c] === nat.id) v += fiyat(c);
+    return v;
+  };
+  const kusatma = () => {
+    let v = 0;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) v += s.prog[c] * fiyat(c);
+    return v;
+  };
+  const t0 = toprak();
+  const V = () => nat.pool + s.attacks.filter(x => x.from === nat.id)
+    .reduce((t, x) => t + x.troops, 0) + kusatma() + (toprak() - t0);
+
+  let once = V(), enBuyuk = 0, dustu = 0;
+  for (let i = 0; i < 400; i++) {
+    const tikOnce = s.tickNo;
+    step(s, 1 / 60, 1 / 60);
+    const v = V();
+    if (s.tickNo === tikOnce) enBuyuk = Math.max(enBuyuk, Math.abs(v - once));
+    once = v;
+  }
+  for (const c of a.amfibi) if (s.owner[c] === nat.id) dustu++;
+  assert(dustu > 0, 'hiçbir çıkarma hücresi düşmedi — ölçüm boş');
+  assert(enBuyuk < 0.01,
+    `bir karede ${enBuyuk.toFixed(4)} asker yoktan doğdu/yok oldu (${dustu} çıkarma hücresi düştü)`);
+});
+
+// Asıl gerekçe: boğaz olmadan ada oyun dışı kalır. 12 tohumda ölçüldü —
+// boğazsız dünyada karanın %2.27'si sonsuza dek sahipsiz, boğazlarla %0.30.
+t('boğaz kapalıyken ada fethedilemez, açıkken fethedilir', () => {
+  // Adanın BAŞLANGIÇTA tamamen sahipsiz olması şart: büyük bir ada başlangıç
+  // yurduna aday olabiliyor ve üstünde bir ulus doğuyor — o zaman boğaz kapalı
+  // olsa da ada dolar, ölçüm anlamını yitirir.
+  const olc = (bogazVar) => {
+    const s = createSim(33);
+    if (!bogazVar) s.world.straitHead.fill(-1);
+    const ada = karaParcalari(s).slice(1)
+      .filter(p => p.every(c => s.owner[c] < 0))
+      .sort((a, b) => b.length - a.length)[0];
+    assert(ada && ada.length >= 40, 'başlangıçta boş, ölçülebilir ada bulunamadı');
+    for (let i = 0; i < 5200; i++) step(s, 0.05, 0.05);
+    let alinan = 0;
+    for (const c of ada) if (s.owner[c] >= 0) alinan++;
+    return alinan / ada.length;
+  };
+  const kapali = olc(false), acik = olc(true);
+  assert(kapali < 0.02, `boğaz kapalıyken adanın %${(kapali * 100).toFixed(0)}'ı alınmış`);
+  assert(acik > 0.5, `boğaz açıkken adanın yalnız %${(acik * 100).toFixed(0)}'ı alınmış`);
 });
 
 // ---------------------------------------------------------------- şehirler

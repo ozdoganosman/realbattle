@@ -103,6 +103,8 @@ body {
   border: 1px solid rgba(200,170,110,.4);
 }
 #target-chip .city { color: #e8c98a; }
+#target-chip .sea { color: #7fd6e8; }
+.front .sea, #fronts-hud .sea { color: #2b7d92; }
 
 #hint-bar {
   position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
@@ -702,6 +704,16 @@ const CITY_R0 = 2, CITY_R1 = 1.6;
 // size 0.5 → 1.4 kat, size 3.0 → 3.4 kat. Halka kenarında 1'e iner.
 const CITY_DEF = 0.8;
 
+// --- deniz çıkarması ---
+// Bir sefer, hedefin en fazla bu kadar deniz hücresi ötedeki kıyısına da
+// yüklenebilir. Kısa tutuldu: bu bir BOĞAZ geçişi, okyanus aşırı çıkarma değil.
+const STRAIT_MAX = 9;
+// Adalar kıyıdan bu kadar hücre açıkta durur. Üst sınır STRAIT_MAX'in altında
+// olmalı — üstünde kalan ada hiçbir seferle ulaşılamaz, sonsuza dek boş kalır.
+const ISLAND_MIN = 3, ISLAND_MAX = 7;
+// Ada alanının en yoğun bu dilimi karaya çevrilir (blobField'ın üst yüzdesi).
+const ISLAND_FRAC = 0.10;
+
 function mulberry32(seed) {
   return function () {
     seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
@@ -765,6 +777,80 @@ function createWorld(seed, opts = {}) {
     if (isLand[i]) landCells++;
   }
 
+  // --- adalar: kıyı açıklarında, boğaz menzili İÇİNDE kara parçaları ---
+  // Üretici tek parça bir kıta veriyordu (ölçüldü: karanın %99-100'ü tek
+  // bağlantılı parça, 100+ hücrelik ada yok). Deniz çıkarmasının üstünde
+  // çalışacağı bir şey olmadığı için mekanik fiilen ölüydü.
+  //
+  // Adalar kıyıdan ISLAND_MIN..ISLAND_MAX hücre açıkta kurulur. Alt sınır
+  // adanın kıtaya yapışmasını, üst sınır da ulaşılamaz kalmasını engeller:
+  // aralık STRAIT_MAX'in altında tutulur, yoksa ada sonsuza dek boş kalır ve
+  // bu, mekaniği eklemekten beterdir.
+  {
+    const suUzak = new Int32Array(W * H).fill(-1);
+    const kuyruk = new Int32Array(W * H);
+    let bas = 0, son = 0;
+    for (let c = 0; c < W * H; c++) {
+      if (isLand[c]) continue;
+      const x = c % W;
+      let kiyi = false;
+      if (x > 0 && isLand[c - 1]) kiyi = true;
+      if (!kiyi && x < W - 1 && isLand[c + 1]) kiyi = true;
+      if (!kiyi && c >= W && isLand[c - W]) kiyi = true;
+      if (!kiyi && c < W * (H - 1) && isLand[c + W]) kiyi = true;
+      if (kiyi) { suUzak[c] = 1; kuyruk[son++] = c; }
+    }
+    while (bas < son) {
+      const u = kuyruk[bas++];
+      const x = u % W;
+      const nb = [];
+      if (x > 0) nb.push(u - 1);
+      if (x < W - 1) nb.push(u + 1);
+      if (u >= W) nb.push(u - W);
+      if (u < W * (H - 1)) nb.push(u + W);
+      for (const v of nb) {
+        if (isLand[v] || suUzak[v] >= 0) continue;
+        suUzak[v] = suUzak[u] + 1;
+        kuyruk[son++] = v;
+      }
+    }
+    // Aday hücreler: kıyıdan en az ISLAND_MIN açıkta (yoksa kıtaya yapışır).
+    // ÜST sınır hücreye değil PARÇAYA uygulanır — her hücreye uygulamak adayı
+    // ~8 hücre genişliğe hapsediyordu (ölçüldü: 50+ hücrelik ada 0-3 arası).
+    // Parçanın bir yeri boğaz menzilindeyse ada ulaşılabilirdir; gerisi
+    // istediği kadar açığa uzanabilir.
+    const adaF = blobField(rnd, Math.round(55 * SC2), 4 * SC, 16 * SC);
+    const tAda = quantile(adaF, null, ISLAND_FRAC);
+    const aday = new Uint8Array(W * H);
+    for (let c = 0; c < W * H; c++)
+      if (!isLand[c] && adaF[c] > tAda && suUzak[c] >= ISLAND_MIN) aday[c] = 1;
+
+    const gor = new Uint8Array(W * H);
+    const parca = [];
+    for (let c0 = 0; c0 < W * H; c0++) {
+      if (!aday[c0] || gor[c0]) continue;
+      parca.length = 0;
+      let enYakin = Infinity;
+      const yig = [c0]; gor[c0] = 1;
+      while (yig.length) {
+        const c = yig.pop();
+        parca.push(c);
+        if (suUzak[c] < enYakin) enYakin = suUzak[c];
+        const x = c % W;
+        const nb = [];
+        if (x > 0) nb.push(c - 1);
+        if (x < W - 1) nb.push(c + 1);
+        if (c >= W) nb.push(c - W);
+        if (c < W * (H - 1)) nb.push(c + W);
+        for (const m of nb) if (aday[m] && !gor[m]) { gor[m] = 1; yig.push(m); }
+      }
+      // Menzil dışındaki parça hiç kurulmaz: ulaşılamaz ada, mekaniği
+      // eklemekten beterdir — haritada sonsuza dek boş bir leke bırakır.
+      if (enYakin > ISLAND_MAX) continue;
+      for (const c of parca) { isLand[c] = 1; landCells++; }
+    }
+  }
+
   // --- dekoratif arazi: dağlık sırtlar ve orman kuşakları ---
   const tMnt = quantile(elev, isLand, 0.12);
   const forestF = blobField(rnd, Math.round(85 * SC2), 6 * SC, 21 * SC);
@@ -821,13 +907,82 @@ function createWorld(seed, opts = {}) {
     }
   }
 
+  // --- boğazlar: kısa deniz geçitleriyle bağlanan kara hücreleri ---
+  // Deniz geçilmez olduğu sürece Britanya, Bizans, İskandinavya oyun dışı
+  // kalıyordu: cephe yalnız kara komşuluğuyla kuruluyor, adaya hiç
+  // dokunulamıyordu. Burada her kara hücresi için, en fazla STRAIT_MAX deniz
+  // hücresi ötedeki karşı kıyılar çıkarılır — sefer bu hattan da açılabilir.
+  //
+  // Yöntem: BÜTÜN kıyılardan aynı anda başlayan tek bir genişlik-öncelikli
+  // tarama (deniz üstünde). Her deniz hücresi en yakın kıyısını ve ona olan
+  // uzaklığını taşır; iki tarama cephesi karşılaşınca aradaki geçit bulunmuş
+  // olur. Kıyı başına ayrı tarama yapmak binlerce BFS demekti.
+  const straitHead = new Int32Array(W * H).fill(-1);
+  const straitTo = [], straitNext = [];
+  const gorulen = new Set();
+  const bagla = (a, b) => {
+    if (a === b) return;
+    const anahtar = a < b ? a * W * H + b : b * W * H + a;
+    if (gorulen.has(anahtar)) return;
+    gorulen.add(anahtar);
+    straitTo.push(b); straitNext.push(straitHead[a]); straitHead[a] = straitTo.length - 1;
+    straitTo.push(a); straitNext.push(straitHead[b]); straitHead[b] = straitTo.length - 1;
+  };
+  {
+    const kaynak = new Int32Array(W * H).fill(-1);
+    const uzak = new Int32Array(W * H);
+    const kuyruk = new Int32Array(W * H);
+    let bas = 0, son = 0;
+    const komsu = (c, out) => {
+      const x = c % W;
+      out.length = 0;
+      if (x > 0) out.push(c - 1);
+      if (x < W - 1) out.push(c + 1);
+      if (c >= W) out.push(c - W);
+      if (c < W * (H - 1)) out.push(c + W);
+      return out;
+    };
+    const tmp = [], karalar = [];
+    // tohum: karaya değen deniz hücreleri. Aynı deniz hücresine değen iki kara
+    // hücresi zaten bir hücrelik boğazla komşudur — doğrudan bağlanır.
+    for (let c = 0; c < W * H; c++) {
+      if (isLand[c]) continue;
+      karalar.length = 0;
+      for (const n of komsu(c, tmp)) if (isLand[n]) karalar.push(n);
+      if (!karalar.length) continue;
+      for (let i = 0; i < karalar.length; i++)
+        for (let j = i + 1; j < karalar.length; j++) bagla(karalar[i], karalar[j]);
+      kaynak[c] = karalar[0]; uzak[c] = 1;
+      kuyruk[son++] = c;
+    }
+    while (bas < son) {
+      const u = kuyruk[bas++];
+      if (uzak[u] >= STRAIT_MAX) continue;
+      for (const v of komsu(u, tmp)) {
+        if (isLand[v]) { if (v !== kaynak[u]) bagla(kaynak[u], v); continue; }
+        if (kaynak[v] < 0) {
+          kaynak[v] = kaynak[u]; uzak[v] = uzak[u] + 1;
+          kuyruk[son++] = v;
+        } else if (kaynak[v] !== kaynak[u] && uzak[u] + uzak[v] <= STRAIT_MAX) {
+          bagla(kaynak[u], kaynak[v]);
+        }
+      }
+    }
+  }
+
   // yükseklik gölgesi (0..1) — yalnız çizim için
   const shade = new Float32Array(W * H);
   const hi = quantile(elev, isLand, 0.02);
   for (let i = 0; i < W * H; i++)
     shade[i] = isLand[i] ? clamp((elev[i] - tLand) / Math.max(1e-6, hi - tLand), 0, 1) : 0;
 
-  return { seed, isLand, terrain, shade, cities, cityAt, cityDef, landCells };
+  return {
+    seed, isLand, terrain, shade, cities, cityAt, cityDef, landCells,
+    // boğaz bağları: straitHead[c] bağlı listenin başı, -1 ise kıyı değil ya da
+    // menzilde karşı kıyı yok. Map yerine düz dizi — arayüz cephe bedellerini
+    // saniyede dört kez sorduğu için burada hash aramasına yer yok.
+    straitHead, straitTo: Int32Array.from(straitTo), straitNext: Int32Array.from(straitNext),
+  };
 }
 
 // ============================ js/audio.js
@@ -1067,6 +1222,12 @@ const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 // Bir ulus bu kadar küçülünce dağılır: toprakları sahipsiz kalır. Kalan bir
 // iki hücrelik kırıntıya nişan almak imkânsız, haritayı da kirletiyor.
 const MIN_CELLS = 0.0008;             // kıtanın bu payının altı = dağılma
+// Deniz çıkarmasının bedeli: boğazdan yüklenen hücre bu kadar pahalıya gelir.
+// Çıkarma bedava olmamalı — yoksa ada tutmanın hiçbir anlamı kalmaz ve kıyı
+// hattı boyunca her yere aynı anda sıçranır. Kara komşuluğu olan hücre normal
+// fiyatlanır; ceza yalnız denizden yüklenen ilk halkaya biner, çıkarma tutunca
+// içeri doğru yayılma normal bedele döner.
+const LANDING_MULT = 2.5;
 
 function createSim(seed) {
   const world = createWorld(seed);
@@ -1292,49 +1453,75 @@ function attackCost(sim, targetId) {
 }
 
 // Belirli bir HÜCREYİ almanın bedeli: taban bedel × şehir savunma çarpanı.
-// Şehir halkası bedeli 2.8 kata kadar çıkarır, yani zengin bölge aynı zamanda
+// Şehir halkası bedeli 3.4 kata kadar çıkarır, yani zengin bölge aynı zamanda
 // sert bölgedir — gelir bedavaya gelmez. Çarpan sahibinden bağımsızdır:
 // şehrin surları kimin elindeyse onu korur.
 function cellCost(sim, targetId, cell) {
   return attackCost(sim, targetId) * sim.world.cityDef[cell];
 }
 
-// Bir hücre listesinin toplam bedeli — cephe hep bir bütün olarak fiyatlanır.
-function ringCost(sim, targetId, cells) {
+// Hücrenin cephedeki AĞIRLIĞI: şehir çarpanı, artı denizden çıkarma yapılıyorsa
+// çıkarma cezası. Bedel de hız da bu ağırlıktan türer, o yüzden tek yerde.
+function agirligi(sim, amfibi, c) {
+  return sim.world.cityDef[c] * (amfibi && amfibi.has(c) ? LANDING_MULT : 1);
+}
+
+// Bir cephenin toplam bedeli — cephe hep bir bütün olarak fiyatlanır.
+function ringCost(sim, targetId, front) {
   const base = attackCost(sim, targetId);
-  const cd = sim.world.cityDef;
   let t = 0;
-  for (const c of cells) t += base * cd[c];
+  for (const c of front.cells) t += base * agirligi(sim, front.amfibi, c);
   return t;
 }
 
-// Halkanın ortalama savunma ağırlığı (şehir çarpanı). Dalganın hızı, ilerledikçe
-// karşılaştığı halkaların ağırlığını açılıştakine oranlayarak ayarlanır.
-function ringWeight(sim, cells) {
-  const cd = sim.world.cityDef;
+// Halkanın ortalama savunma ağırlığı. Dalganın hızı, ilerledikçe karşılaştığı
+// halkaların ağırlığını açılıştakine oranlayarak ayarlanır.
+function ringWeight(sim, front) {
   let t = 0;
-  for (const c of cells) t += cd[c];
-  return cells.length ? t / cells.length : 1;
+  for (const c of front.cells) t += agirligi(sim, front.amfibi, c);
+  return front.cells.length ? t / front.cells.length : 1;
 }
 
 // Hedefin bize değen bütün hücreleri — cephenin ta kendisi.
+//
+// İki yoldan değebilir:
+//   1. KARADAN — hücre bizim bir hücremize komşu.
+//   2. DENİZDEN — hücre, bizim bir hücremizle kısa bir boğazla bağlı (world.js
+//      bunları haritayla birlikte önceden çıkarır). Çıkarma yapılan hücreler
+//      `amfibi` kümesine girer ve LANDING_MULT kadar pahalıya gelir.
+// Kara komşuluğu varsa çıkarmaya gerek yoktur — o hücre normal fiyatlanır.
 function frontOf(sim, nat, targetId) {
-  const border = [];
+  const cells = [];
+  const amfibi = new Set();
+  const { straitHead, straitTo, straitNext, isLand } = sim.world;
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     if (sim.owner[c] !== targetId) continue;
-    if (targetId < 0 && !sim.world.isLand[c]) continue;
+    if (targetId < 0 && !isLand[c]) continue;
+    let karadan = false;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) { border.push(c); break; }
+      if (sim.owner[n] === nat.id) { karadan = true; break; }
+    }
+    if (karadan) { cells.push(c); continue; }
+    for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+      if (sim.owner[straitTo[e]] !== nat.id) continue;
+      cells.push(c); amfibi.add(c);
+      break;
     }
   }
-  return border;
+  return { cells, amfibi };
 }
 
 // Bu cepheyi bir hücre içeri itmenin bedeli — yapılabilecek EN KÜÇÜK hamle.
 function frontCost(sim, nat, targetId) {
   if (targetId === nat.id) return 0;
   return ringCost(sim, targetId, frontOf(sim, nat, targetId));
+}
+
+// Cephenin denizden mi kurulduğu — arayüz "deniz çıkarması" diyebilsin diye.
+function isLanding(sim, nat, targetId) {
+  const f = frontOf(sim, nat, targetId);
+  return f.cells.length > 0 && f.amfibi.size === f.cells.length;
 }
 
 // Bütün komşu cepheler, TEK taramada: halkanın bedeli ve kaç hücre olduğu.
@@ -1344,25 +1531,34 @@ function frontCost(sim, nat, targetId) {
 // "bu asker kaç hücre alır" ancak ORTALAMA birim bedelle söylenebilir.
 function frontStats(sim, nat) {
   const say = new Map();
-  const cd = sim.world.cityDef;
+  const { cityDef, straitHead, straitTo, straitNext, isLand } = sim.world;
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     const o = sim.owner[c];
     if (o === nat.id) continue;
-    if (o < 0 && !sim.world.isLand[c]) continue;
+    if (o < 0 && !isLand[c]) continue;
+    let karadan = false;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) {
-        const r = say.get(o) || { hucre: 0, agirlik: 0 };
-        r.hucre++; r.agirlik += cd[c];
-        say.set(o, r);
-        break;
-      }
+      if (sim.owner[n] === nat.id) { karadan = true; break; }
     }
+    let amfibi = false;
+    if (!karadan) {
+      for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+        if (sim.owner[straitTo[e]] === nat.id) { amfibi = true; break; }
+      }
+      if (!amfibi) continue;
+    }
+    const r = say.get(o) || { hucre: 0, agirlik: 0, cikarma: 0 };
+    r.hucre++;
+    r.agirlik += cityDef[c] * (amfibi ? LANDING_MULT : 1);
+    if (amfibi) r.cikarma++;
+    say.set(o, r);
   }
   const out = new Map();
   for (const [id, r] of say) {
     const bedel = r.agirlik * attackCost(sim, id);
-    out.set(id, { bedel, hucre: r.hucre, birim: bedel / r.hucre });
+    // cikarma: cephenin kaç hücresine denizden yükleniliyor (hepsiyse saf çıkarma)
+    out.set(id, { bedel, hucre: r.hucre, birim: bedel / r.hucre, cikarma: r.cikarma });
   }
   return out;
 }
@@ -1416,7 +1612,7 @@ function reinforceAttack(sim, nat, atk, troops) {
   // Şehir halkasına girmiş bir cephede bu fark büyüktür — aynı hücre sayısı
   // çok daha pahalıya gelir.
   const border = frontOf(sim, nat, atk.target);
-  if (!border.length) return null;                  // cephe kapanmış
+  if (!border.cells.length) return null;            // cephe kapanmış
   const halka = ringCost(sim, atk.target, border);
   troops = halkayaYuvarla(halka, troops, Math.max(nat.pool, troops));
   if (!troops) return null;                         // bir halkaya bile yetmiyor
@@ -1424,9 +1620,15 @@ function reinforceAttack(sim, nat, atk, troops) {
   nat.pool -= troops;
   atk.troops += troops;
   atk.start += troops;          // ilerleme çubuğu kalan/toplam okur
-  atk.rate = cepheHizi(atk.target, atk.troops, halka / border.length);
+  atk.rate = cepheHizi(atk.target, atk.troops, halka / border.cells.length);
   // hız CANLI cepheye göre yeniden kuruldu; yavaşlama ölçütü de oraya taşınmalı
   atk.agirlik = ringWeight(sim, border);
+  // Çıkarma kümesi BÜYÜR, değişmez: yeni açılan çıkarma hücreleri eklenir ama
+  // eskiler çıkarılmaz. Küme değiştirilirse yarım kuşatılmış bir hücrenin
+  // fiyatı kuşatma sürerken değişir — `yatirim` defteri o hücreyi 2.5 katla
+  // yazmışken harita 1 katla okunur ve defter haritadan ayrılır. Bir hücrenin
+  // bedeli, kuşatması başladığı andan düştüğü ana kadar sabit kalmalı.
+  for (const c of border.amfibi) atk.amfibi.add(c);
   atk.takviye = (atk.takviye || 0) + 1;
   sim.fx.push({ tip: 'attack', nat: nat.id, target: atk.target, takviye: true });
   sim.dirty = true;
@@ -1444,23 +1646,25 @@ function startAttack(sim, nat, targetId, troops) {
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
 
   const border = frontOf(sim, nat, targetId);
-  if (!border.length) return null;
+  if (!border.cells.length) return null;
 
   const halka = ringCost(sim, targetId, border);
   troops = halkayaYuvarla(halka, troops, Math.max(nat.pool, troops));
   if (!troops) return null;                       // bir halkaya bile yetmiyor
 
-  const layer = border;
+  const layer = border.cells;
   const inQ = new Set(layer);
 
   nat.pool -= troops;
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
     troops, start: troops, layer, next: [], inQ,
-    rate: cepheHizi(targetId, troops, halka / border.length),
+    rate: cepheHizi(targetId, troops, halka / border.cells.length),
     // açılış halkasının ağırlığı — ilerledikçe karşılaşılan halkalar buna
     // oranlanır, pahalı halkada dalga yavaşlar (şehir cepheyi takar)
     agirlik: ringWeight(sim, border),
+    // denizden yüklenen hücreler; çıkarma cezasını yalnız bunlar öder
+    amfibi: border.amfibi,
     yatirim: 0,       // yarım halkaya yatırılmış, henüz toprağa dönmemiş asker
     takviye: 0,       // cepheye kaç kez takviye gitti
   };
@@ -1623,7 +1827,8 @@ function stepAttacks(sim, dt) {
     // halkanın ortalamasına oranlanır. İki kat pahalı halka yarı hızla dolar,
     // ama içindeki bütün hücreler yine aynı anda ilerler.
     const base = attackCost(sim, a.target);
-    const cd = sim.world.cityDef;
+    // hücre ağırlığı = şehir çarpanı × (denizden yükleniyorsa çıkarma cezası)
+    const ag = c => agirligi(sim, a.amfibi, c);
     let butce = a.rate * dt;
     let bitti = false;
 
@@ -1640,7 +1845,7 @@ function stepAttacks(sim, dt) {
 
       // bu halkanın ortalama ağırlığı — sefer açılışındakine oranla hızı belirler
       let agirlik = 0;
-      for (const c of canli) agirlik += cd[c];
+      for (const c of canli) agirlik += ag(c);
       const yavaslama = a.agirlik / (agirlik / canli.length);
 
       // Payın asker maliyeti hücreden hücreye değiştiği için önce ölçülür:
@@ -1648,7 +1853,7 @@ function stepAttacks(sim, dt) {
       // vardı ve bütçe `troops / cost` ile baştan kırpılabiliyordu.)
       let pay = butce * yavaslama / canli.length;
       let maliyet = 0;
-      for (const c of canli) maliyet += Math.min(pay, 1 - sim.prog[c]) * base * cd[c];
+      for (const c of canli) maliyet += Math.min(pay, 1 - sim.prog[c]) * base * ag(c);
       if (maliyet > a.troops && maliyet > 0) pay *= a.troops / maliyet;
 
       let ilerleme = 0, harcanan = 0;
@@ -1666,7 +1871,7 @@ function stepAttacks(sim, dt) {
           dolan.push(c);
         }
         ilerleme += ek;
-        harcanan += ek * base * cd[c];
+        harcanan += ek * base * ag(c);
       }
       // bütçe seferin AÇILIŞ birimindedir; harcanan ilerleme oraya çevrilir
       butce -= ilerleme / yavaslama;
@@ -1678,7 +1883,7 @@ function stepAttacks(sim, dt) {
       // ama savunanın kaybı kalıcıydı — art arda ufak dokunuşla bir orduyu
       // hiç toprak almadan eritmek mümkündü.
       let dusenBedel = 0;
-      for (const c of dolan) dusenBedel += base * cd[c];
+      for (const c of dolan) dusenBedel += base * ag(c);
       if (a.target >= 0 && dolan.length) {
         const def = sim.nations[a.target];
         def.pool = Math.max(0, def.pool - dusenBedel * DEF_LOSS);
@@ -2351,7 +2556,12 @@ function showChip(sx, sy, o) {
   const sehir = ci >= 0
     ? ` <span class="city">🏰 ${sim.world.cities[ci].name}</span>`
     : kat > 1.05 ? ` <span class="city">🏰 surlar · ${kat.toFixed(1)}× bedel</span>` : '';
-  chip.innerHTML = `<b>${ad}</b>${sehir}` +
+  // Cephenin bir kısmı ya da tamamı boğazın karşısındaysa söyle: çıkarma
+  // pahalıdır, oyuncu bedelin neden yüksek olduğunu bilmeli.
+  const deniz = st && st.cikarma
+    ? ` <span class="sea">⚓ ${st.cikarma === st.hucre ? 'deniz çıkarması' : 'kısmen çıkarma'}</span>`
+    : '';
+  chip.innerHTML = `<b>${ad}</b>${sehir}${deniz}` +
     (uyari ? ` — ${uyari}`
            : ` · ${acik ? '<i>takviye</i> ' : ''}<b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
@@ -2685,6 +2895,7 @@ function refreshFronts() {
     const pct = clamp(a.troops / a.start, 0, 1);
     row.innerHTML =
       `<div class="front-top"><span>${ad}` +
+      (a.amfibi && a.amfibi.size ? ' <span class="sea">⚓</span>' : '') +
       (a.takviye ? ` <span class="floor">+${a.takviye} takviye</span>` : '') +
       `</span><b>${fmt(a.troops)}</b></div>` +
       `<div class="bar"><i style="width:${pct * 100}%;background:${me.color}"></i></div>`;

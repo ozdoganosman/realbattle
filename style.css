@@ -102,6 +102,8 @@ body {
   border: 1px solid rgba(200,170,110,.4);
 }
 #target-chip .city { color: #e8c98a; }
+#target-chip .sea { color: #7fd6e8; }
+.front .sea, #fronts-hud .sea { color: #2b7d92; }
 
 #hint-bar {
   position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 3;

@@ -241,7 +241,12 @@ function showChip(sx, sy, o) {
   const sehir = ci >= 0
     ? ` <span class="city">🏰 ${sim.world.cities[ci].name}</span>`
     : kat > 1.05 ? ` <span class="city">🏰 surlar · ${kat.toFixed(1)}× bedel</span>` : '';
-  chip.innerHTML = `<b>${ad}</b>${sehir}` +
+  // Cephenin bir kısmı ya da tamamı boğazın karşısındaysa söyle: çıkarma
+  // pahalıdır, oyuncu bedelin neden yüksek olduğunu bilmeli.
+  const deniz = st && st.cikarma
+    ? ` <span class="sea">⚓ ${st.cikarma === st.hucre ? 'deniz çıkarması' : 'kısmen çıkarma'}</span>`
+    : '';
+  chip.innerHTML = `<b>${ad}</b>${sehir}${deniz}` +
     (uyari ? ` — ${uyari}`
            : ` · ${acik ? '<i>takviye</i> ' : ''}<b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
@@ -575,6 +580,7 @@ function refreshFronts() {
     const pct = clamp(a.troops / a.start, 0, 1);
     row.innerHTML =
       `<div class="front-top"><span>${ad}` +
+      (a.amfibi && a.amfibi.size ? ' <span class="sea">⚓</span>' : '') +
       (a.takviye ? ` <span class="floor">+${a.takviye} takviye</span>` : '') +
       `</span><b>${fmt(a.troops)}</b></div>` +
       `<div class="bar"><i style="width:${pct * 100}%;background:${me.color}"></i></div>`;

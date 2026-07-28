@@ -112,6 +112,12 @@ const RATE_MIN = 7;                   // en yavaş yayılma (hücre/sn)
 // Bir ulus bu kadar küçülünce dağılır: toprakları sahipsiz kalır. Kalan bir
 // iki hücrelik kırıntıya nişan almak imkânsız, haritayı da kirletiyor.
 const MIN_CELLS = 0.0008;             // kıtanın bu payının altı = dağılma
+// Deniz çıkarmasının bedeli: boğazdan yüklenen hücre bu kadar pahalıya gelir.
+// Çıkarma bedava olmamalı — yoksa ada tutmanın hiçbir anlamı kalmaz ve kıyı
+// hattı boyunca her yere aynı anda sıçranır. Kara komşuluğu olan hücre normal
+// fiyatlanır; ceza yalnız denizden yüklenen ilk halkaya biner, çıkarma tutunca
+// içeri doğru yayılma normal bedele döner.
+export const LANDING_MULT = 2.5;
 
 export function createSim(seed) {
   const world = createWorld(seed);
@@ -337,49 +343,75 @@ export function attackCost(sim, targetId) {
 }
 
 // Belirli bir HÜCREYİ almanın bedeli: taban bedel × şehir savunma çarpanı.
-// Şehir halkası bedeli 2.8 kata kadar çıkarır, yani zengin bölge aynı zamanda
+// Şehir halkası bedeli 3.4 kata kadar çıkarır, yani zengin bölge aynı zamanda
 // sert bölgedir — gelir bedavaya gelmez. Çarpan sahibinden bağımsızdır:
 // şehrin surları kimin elindeyse onu korur.
 export function cellCost(sim, targetId, cell) {
   return attackCost(sim, targetId) * sim.world.cityDef[cell];
 }
 
-// Bir hücre listesinin toplam bedeli — cephe hep bir bütün olarak fiyatlanır.
-function ringCost(sim, targetId, cells) {
+// Hücrenin cephedeki AĞIRLIĞI: şehir çarpanı, artı denizden çıkarma yapılıyorsa
+// çıkarma cezası. Bedel de hız da bu ağırlıktan türer, o yüzden tek yerde.
+function agirligi(sim, amfibi, c) {
+  return sim.world.cityDef[c] * (amfibi && amfibi.has(c) ? LANDING_MULT : 1);
+}
+
+// Bir cephenin toplam bedeli — cephe hep bir bütün olarak fiyatlanır.
+function ringCost(sim, targetId, front) {
   const base = attackCost(sim, targetId);
-  const cd = sim.world.cityDef;
   let t = 0;
-  for (const c of cells) t += base * cd[c];
+  for (const c of front.cells) t += base * agirligi(sim, front.amfibi, c);
   return t;
 }
 
-// Halkanın ortalama savunma ağırlığı (şehir çarpanı). Dalganın hızı, ilerledikçe
-// karşılaştığı halkaların ağırlığını açılıştakine oranlayarak ayarlanır.
-function ringWeight(sim, cells) {
-  const cd = sim.world.cityDef;
+// Halkanın ortalama savunma ağırlığı. Dalganın hızı, ilerledikçe karşılaştığı
+// halkaların ağırlığını açılıştakine oranlayarak ayarlanır.
+function ringWeight(sim, front) {
   let t = 0;
-  for (const c of cells) t += cd[c];
-  return cells.length ? t / cells.length : 1;
+  for (const c of front.cells) t += agirligi(sim, front.amfibi, c);
+  return front.cells.length ? t / front.cells.length : 1;
 }
 
 // Hedefin bize değen bütün hücreleri — cephenin ta kendisi.
+//
+// İki yoldan değebilir:
+//   1. KARADAN — hücre bizim bir hücremize komşu.
+//   2. DENİZDEN — hücre, bizim bir hücremizle kısa bir boğazla bağlı (world.js
+//      bunları haritayla birlikte önceden çıkarır). Çıkarma yapılan hücreler
+//      `amfibi` kümesine girer ve LANDING_MULT kadar pahalıya gelir.
+// Kara komşuluğu varsa çıkarmaya gerek yoktur — o hücre normal fiyatlanır.
 function frontOf(sim, nat, targetId) {
-  const border = [];
+  const cells = [];
+  const amfibi = new Set();
+  const { straitHead, straitTo, straitNext, isLand } = sim.world;
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     if (sim.owner[c] !== targetId) continue;
-    if (targetId < 0 && !sim.world.isLand[c]) continue;
+    if (targetId < 0 && !isLand[c]) continue;
+    let karadan = false;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) { border.push(c); break; }
+      if (sim.owner[n] === nat.id) { karadan = true; break; }
+    }
+    if (karadan) { cells.push(c); continue; }
+    for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+      if (sim.owner[straitTo[e]] !== nat.id) continue;
+      cells.push(c); amfibi.add(c);
+      break;
     }
   }
-  return border;
+  return { cells, amfibi };
 }
 
 // Bu cepheyi bir hücre içeri itmenin bedeli — yapılabilecek EN KÜÇÜK hamle.
 export function frontCost(sim, nat, targetId) {
   if (targetId === nat.id) return 0;
   return ringCost(sim, targetId, frontOf(sim, nat, targetId));
+}
+
+// Cephenin denizden mi kurulduğu — arayüz "deniz çıkarması" diyebilsin diye.
+export function isLanding(sim, nat, targetId) {
+  const f = frontOf(sim, nat, targetId);
+  return f.cells.length > 0 && f.amfibi.size === f.cells.length;
 }
 
 // Bütün komşu cepheler, TEK taramada: halkanın bedeli ve kaç hücre olduğu.
@@ -389,25 +421,34 @@ export function frontCost(sim, nat, targetId) {
 // "bu asker kaç hücre alır" ancak ORTALAMA birim bedelle söylenebilir.
 export function frontStats(sim, nat) {
   const say = new Map();
-  const cd = sim.world.cityDef;
+  const { cityDef, straitHead, straitTo, straitNext, isLand } = sim.world;
   const tmp = [];
   for (let c = 0; c < W * H; c++) {
     const o = sim.owner[c];
     if (o === nat.id) continue;
-    if (o < 0 && !sim.world.isLand[c]) continue;
+    if (o < 0 && !isLand[c]) continue;
+    let karadan = false;
     for (const n of nbs(c, tmp)) {
-      if (sim.owner[n] === nat.id) {
-        const r = say.get(o) || { hucre: 0, agirlik: 0 };
-        r.hucre++; r.agirlik += cd[c];
-        say.set(o, r);
-        break;
-      }
+      if (sim.owner[n] === nat.id) { karadan = true; break; }
     }
+    let amfibi = false;
+    if (!karadan) {
+      for (let e = straitHead[c]; e >= 0; e = straitNext[e]) {
+        if (sim.owner[straitTo[e]] === nat.id) { amfibi = true; break; }
+      }
+      if (!amfibi) continue;
+    }
+    const r = say.get(o) || { hucre: 0, agirlik: 0, cikarma: 0 };
+    r.hucre++;
+    r.agirlik += cityDef[c] * (amfibi ? LANDING_MULT : 1);
+    if (amfibi) r.cikarma++;
+    say.set(o, r);
   }
   const out = new Map();
   for (const [id, r] of say) {
     const bedel = r.agirlik * attackCost(sim, id);
-    out.set(id, { bedel, hucre: r.hucre, birim: bedel / r.hucre });
+    // cikarma: cephenin kaç hücresine denizden yükleniliyor (hepsiyse saf çıkarma)
+    out.set(id, { bedel, hucre: r.hucre, birim: bedel / r.hucre, cikarma: r.cikarma });
   }
   return out;
 }
@@ -461,7 +502,7 @@ export function reinforceAttack(sim, nat, atk, troops) {
   // Şehir halkasına girmiş bir cephede bu fark büyüktür — aynı hücre sayısı
   // çok daha pahalıya gelir.
   const border = frontOf(sim, nat, atk.target);
-  if (!border.length) return null;                  // cephe kapanmış
+  if (!border.cells.length) return null;            // cephe kapanmış
   const halka = ringCost(sim, atk.target, border);
   troops = halkayaYuvarla(halka, troops, Math.max(nat.pool, troops));
   if (!troops) return null;                         // bir halkaya bile yetmiyor
@@ -469,9 +510,15 @@ export function reinforceAttack(sim, nat, atk, troops) {
   nat.pool -= troops;
   atk.troops += troops;
   atk.start += troops;          // ilerleme çubuğu kalan/toplam okur
-  atk.rate = cepheHizi(atk.target, atk.troops, halka / border.length);
+  atk.rate = cepheHizi(atk.target, atk.troops, halka / border.cells.length);
   // hız CANLI cepheye göre yeniden kuruldu; yavaşlama ölçütü de oraya taşınmalı
   atk.agirlik = ringWeight(sim, border);
+  // Çıkarma kümesi BÜYÜR, değişmez: yeni açılan çıkarma hücreleri eklenir ama
+  // eskiler çıkarılmaz. Küme değiştirilirse yarım kuşatılmış bir hücrenin
+  // fiyatı kuşatma sürerken değişir — `yatirim` defteri o hücreyi 2.5 katla
+  // yazmışken harita 1 katla okunur ve defter haritadan ayrılır. Bir hücrenin
+  // bedeli, kuşatması başladığı andan düştüğü ana kadar sabit kalmalı.
+  for (const c of border.amfibi) atk.amfibi.add(c);
   atk.takviye = (atk.takviye || 0) + 1;
   sim.fx.push({ tip: 'attack', nat: nat.id, target: atk.target, takviye: true });
   sim.dirty = true;
@@ -489,23 +536,25 @@ export function startAttack(sim, nat, targetId, troops) {
   troops = Math.min(troops, maxCommit(sim, nat));   // borçlanmaya izin var
 
   const border = frontOf(sim, nat, targetId);
-  if (!border.length) return null;
+  if (!border.cells.length) return null;
 
   const halka = ringCost(sim, targetId, border);
   troops = halkayaYuvarla(halka, troops, Math.max(nat.pool, troops));
   if (!troops) return null;                       // bir halkaya bile yetmiyor
 
-  const layer = border;
+  const layer = border.cells;
   const inQ = new Set(layer);
 
   nat.pool -= troops;
   const atk = {
     id: sim.nextAttackId++, from: nat.id, target: targetId,
     troops, start: troops, layer, next: [], inQ,
-    rate: cepheHizi(targetId, troops, halka / border.length),
+    rate: cepheHizi(targetId, troops, halka / border.cells.length),
     // açılış halkasının ağırlığı — ilerledikçe karşılaşılan halkalar buna
     // oranlanır, pahalı halkada dalga yavaşlar (şehir cepheyi takar)
     agirlik: ringWeight(sim, border),
+    // denizden yüklenen hücreler; çıkarma cezasını yalnız bunlar öder
+    amfibi: border.amfibi,
     yatirim: 0,       // yarım halkaya yatırılmış, henüz toprağa dönmemiş asker
     takviye: 0,       // cepheye kaç kez takviye gitti
   };
@@ -668,7 +717,8 @@ function stepAttacks(sim, dt) {
     // halkanın ortalamasına oranlanır. İki kat pahalı halka yarı hızla dolar,
     // ama içindeki bütün hücreler yine aynı anda ilerler.
     const base = attackCost(sim, a.target);
-    const cd = sim.world.cityDef;
+    // hücre ağırlığı = şehir çarpanı × (denizden yükleniyorsa çıkarma cezası)
+    const ag = c => agirligi(sim, a.amfibi, c);
     let butce = a.rate * dt;
     let bitti = false;
 
@@ -685,7 +735,7 @@ function stepAttacks(sim, dt) {
 
       // bu halkanın ortalama ağırlığı — sefer açılışındakine oranla hızı belirler
       let agirlik = 0;
-      for (const c of canli) agirlik += cd[c];
+      for (const c of canli) agirlik += ag(c);
       const yavaslama = a.agirlik / (agirlik / canli.length);
 
       // Payın asker maliyeti hücreden hücreye değiştiği için önce ölçülür:
@@ -693,7 +743,7 @@ function stepAttacks(sim, dt) {
       // vardı ve bütçe `troops / cost` ile baştan kırpılabiliyordu.)
       let pay = butce * yavaslama / canli.length;
       let maliyet = 0;
-      for (const c of canli) maliyet += Math.min(pay, 1 - sim.prog[c]) * base * cd[c];
+      for (const c of canli) maliyet += Math.min(pay, 1 - sim.prog[c]) * base * ag(c);
       if (maliyet > a.troops && maliyet > 0) pay *= a.troops / maliyet;
 
       let ilerleme = 0, harcanan = 0;
@@ -711,7 +761,7 @@ function stepAttacks(sim, dt) {
           dolan.push(c);
         }
         ilerleme += ek;
-        harcanan += ek * base * cd[c];
+        harcanan += ek * base * ag(c);
       }
       // bütçe seferin AÇILIŞ birimindedir; harcanan ilerleme oraya çevrilir
       butce -= ilerleme / yavaslama;
@@ -723,7 +773,7 @@ function stepAttacks(sim, dt) {
       // ama savunanın kaybı kalıcıydı — art arda ufak dokunuşla bir orduyu
       // hiç toprak almadan eritmek mümkündü.
       let dusenBedel = 0;
-      for (const c of dolan) dusenBedel += base * cd[c];
+      for (const c of dolan) dusenBedel += base * ag(c);
       if (a.target >= 0 && dolan.length) {
         const def = sim.nations[a.target];
         def.pool = Math.max(0, def.pool - dusenBedel * DEF_LOSS);

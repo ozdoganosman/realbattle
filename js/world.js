@@ -38,6 +38,16 @@ export const CITY_R0 = 2, CITY_R1 = 1.6;
 // size 0.5 → 1.4 kat, size 3.0 → 3.4 kat. Halka kenarında 1'e iner.
 export const CITY_DEF = 0.8;
 
+// --- deniz çıkarması ---
+// Bir sefer, hedefin en fazla bu kadar deniz hücresi ötedeki kıyısına da
+// yüklenebilir. Kısa tutuldu: bu bir BOĞAZ geçişi, okyanus aşırı çıkarma değil.
+export const STRAIT_MAX = 9;
+// Adalar kıyıdan bu kadar hücre açıkta durur. Üst sınır STRAIT_MAX'in altında
+// olmalı — üstünde kalan ada hiçbir seferle ulaşılamaz, sonsuza dek boş kalır.
+export const ISLAND_MIN = 3, ISLAND_MAX = 7;
+// Ada alanının en yoğun bu dilimi karaya çevrilir (blobField'ın üst yüzdesi).
+export const ISLAND_FRAC = 0.10;
+
 export function mulberry32(seed) {
   return function () {
     seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
@@ -101,6 +111,80 @@ export function createWorld(seed, opts = {}) {
     if (isLand[i]) landCells++;
   }
 
+  // --- adalar: kıyı açıklarında, boğaz menzili İÇİNDE kara parçaları ---
+  // Üretici tek parça bir kıta veriyordu (ölçüldü: karanın %99-100'ü tek
+  // bağlantılı parça, 100+ hücrelik ada yok). Deniz çıkarmasının üstünde
+  // çalışacağı bir şey olmadığı için mekanik fiilen ölüydü.
+  //
+  // Adalar kıyıdan ISLAND_MIN..ISLAND_MAX hücre açıkta kurulur. Alt sınır
+  // adanın kıtaya yapışmasını, üst sınır da ulaşılamaz kalmasını engeller:
+  // aralık STRAIT_MAX'in altında tutulur, yoksa ada sonsuza dek boş kalır ve
+  // bu, mekaniği eklemekten beterdir.
+  {
+    const suUzak = new Int32Array(W * H).fill(-1);
+    const kuyruk = new Int32Array(W * H);
+    let bas = 0, son = 0;
+    for (let c = 0; c < W * H; c++) {
+      if (isLand[c]) continue;
+      const x = c % W;
+      let kiyi = false;
+      if (x > 0 && isLand[c - 1]) kiyi = true;
+      if (!kiyi && x < W - 1 && isLand[c + 1]) kiyi = true;
+      if (!kiyi && c >= W && isLand[c - W]) kiyi = true;
+      if (!kiyi && c < W * (H - 1) && isLand[c + W]) kiyi = true;
+      if (kiyi) { suUzak[c] = 1; kuyruk[son++] = c; }
+    }
+    while (bas < son) {
+      const u = kuyruk[bas++];
+      const x = u % W;
+      const nb = [];
+      if (x > 0) nb.push(u - 1);
+      if (x < W - 1) nb.push(u + 1);
+      if (u >= W) nb.push(u - W);
+      if (u < W * (H - 1)) nb.push(u + W);
+      for (const v of nb) {
+        if (isLand[v] || suUzak[v] >= 0) continue;
+        suUzak[v] = suUzak[u] + 1;
+        kuyruk[son++] = v;
+      }
+    }
+    // Aday hücreler: kıyıdan en az ISLAND_MIN açıkta (yoksa kıtaya yapışır).
+    // ÜST sınır hücreye değil PARÇAYA uygulanır — her hücreye uygulamak adayı
+    // ~8 hücre genişliğe hapsediyordu (ölçüldü: 50+ hücrelik ada 0-3 arası).
+    // Parçanın bir yeri boğaz menzilindeyse ada ulaşılabilirdir; gerisi
+    // istediği kadar açığa uzanabilir.
+    const adaF = blobField(rnd, Math.round(55 * SC2), 4 * SC, 16 * SC);
+    const tAda = quantile(adaF, null, ISLAND_FRAC);
+    const aday = new Uint8Array(W * H);
+    for (let c = 0; c < W * H; c++)
+      if (!isLand[c] && adaF[c] > tAda && suUzak[c] >= ISLAND_MIN) aday[c] = 1;
+
+    const gor = new Uint8Array(W * H);
+    const parca = [];
+    for (let c0 = 0; c0 < W * H; c0++) {
+      if (!aday[c0] || gor[c0]) continue;
+      parca.length = 0;
+      let enYakin = Infinity;
+      const yig = [c0]; gor[c0] = 1;
+      while (yig.length) {
+        const c = yig.pop();
+        parca.push(c);
+        if (suUzak[c] < enYakin) enYakin = suUzak[c];
+        const x = c % W;
+        const nb = [];
+        if (x > 0) nb.push(c - 1);
+        if (x < W - 1) nb.push(c + 1);
+        if (c >= W) nb.push(c - W);
+        if (c < W * (H - 1)) nb.push(c + W);
+        for (const m of nb) if (aday[m] && !gor[m]) { gor[m] = 1; yig.push(m); }
+      }
+      // Menzil dışındaki parça hiç kurulmaz: ulaşılamaz ada, mekaniği
+      // eklemekten beterdir — haritada sonsuza dek boş bir leke bırakır.
+      if (enYakin > ISLAND_MAX) continue;
+      for (const c of parca) { isLand[c] = 1; landCells++; }
+    }
+  }
+
   // --- dekoratif arazi: dağlık sırtlar ve orman kuşakları ---
   const tMnt = quantile(elev, isLand, 0.12);
   const forestF = blobField(rnd, Math.round(85 * SC2), 6 * SC, 21 * SC);
@@ -157,11 +241,80 @@ export function createWorld(seed, opts = {}) {
     }
   }
 
+  // --- boğazlar: kısa deniz geçitleriyle bağlanan kara hücreleri ---
+  // Deniz geçilmez olduğu sürece Britanya, Bizans, İskandinavya oyun dışı
+  // kalıyordu: cephe yalnız kara komşuluğuyla kuruluyor, adaya hiç
+  // dokunulamıyordu. Burada her kara hücresi için, en fazla STRAIT_MAX deniz
+  // hücresi ötedeki karşı kıyılar çıkarılır — sefer bu hattan da açılabilir.
+  //
+  // Yöntem: BÜTÜN kıyılardan aynı anda başlayan tek bir genişlik-öncelikli
+  // tarama (deniz üstünde). Her deniz hücresi en yakın kıyısını ve ona olan
+  // uzaklığını taşır; iki tarama cephesi karşılaşınca aradaki geçit bulunmuş
+  // olur. Kıyı başına ayrı tarama yapmak binlerce BFS demekti.
+  const straitHead = new Int32Array(W * H).fill(-1);
+  const straitTo = [], straitNext = [];
+  const gorulen = new Set();
+  const bagla = (a, b) => {
+    if (a === b) return;
+    const anahtar = a < b ? a * W * H + b : b * W * H + a;
+    if (gorulen.has(anahtar)) return;
+    gorulen.add(anahtar);
+    straitTo.push(b); straitNext.push(straitHead[a]); straitHead[a] = straitTo.length - 1;
+    straitTo.push(a); straitNext.push(straitHead[b]); straitHead[b] = straitTo.length - 1;
+  };
+  {
+    const kaynak = new Int32Array(W * H).fill(-1);
+    const uzak = new Int32Array(W * H);
+    const kuyruk = new Int32Array(W * H);
+    let bas = 0, son = 0;
+    const komsu = (c, out) => {
+      const x = c % W;
+      out.length = 0;
+      if (x > 0) out.push(c - 1);
+      if (x < W - 1) out.push(c + 1);
+      if (c >= W) out.push(c - W);
+      if (c < W * (H - 1)) out.push(c + W);
+      return out;
+    };
+    const tmp = [], karalar = [];
+    // tohum: karaya değen deniz hücreleri. Aynı deniz hücresine değen iki kara
+    // hücresi zaten bir hücrelik boğazla komşudur — doğrudan bağlanır.
+    for (let c = 0; c < W * H; c++) {
+      if (isLand[c]) continue;
+      karalar.length = 0;
+      for (const n of komsu(c, tmp)) if (isLand[n]) karalar.push(n);
+      if (!karalar.length) continue;
+      for (let i = 0; i < karalar.length; i++)
+        for (let j = i + 1; j < karalar.length; j++) bagla(karalar[i], karalar[j]);
+      kaynak[c] = karalar[0]; uzak[c] = 1;
+      kuyruk[son++] = c;
+    }
+    while (bas < son) {
+      const u = kuyruk[bas++];
+      if (uzak[u] >= STRAIT_MAX) continue;
+      for (const v of komsu(u, tmp)) {
+        if (isLand[v]) { if (v !== kaynak[u]) bagla(kaynak[u], v); continue; }
+        if (kaynak[v] < 0) {
+          kaynak[v] = kaynak[u]; uzak[v] = uzak[u] + 1;
+          kuyruk[son++] = v;
+        } else if (kaynak[v] !== kaynak[u] && uzak[u] + uzak[v] <= STRAIT_MAX) {
+          bagla(kaynak[u], kaynak[v]);
+        }
+      }
+    }
+  }
+
   // yükseklik gölgesi (0..1) — yalnız çizim için
   const shade = new Float32Array(W * H);
   const hi = quantile(elev, isLand, 0.02);
   for (let i = 0; i < W * H; i++)
     shade[i] = isLand[i] ? clamp((elev[i] - tLand) / Math.max(1e-6, hi - tLand), 0, 1) : 0;
 
-  return { seed, isLand, terrain, shade, cities, cityAt, cityDef, landCells };
+  return {
+    seed, isLand, terrain, shade, cities, cityAt, cityDef, landCells,
+    // boğaz bağları: straitHead[c] bağlı listenin başı, -1 ise kıyı değil ya da
+    // menzilde karşı kıyı yok. Map yerine düz dizi — arayüz cephe bedellerini
+    // saniyede dört kez sorduğu için burada hash aramasına yer yok.
+    straitHead, straitTo: Int32Array.from(straitTo), straitNext: Int32Array.from(straitNext),
+  };
 }
