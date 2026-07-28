@@ -1,9 +1,14 @@
 // Dünya üretimi — deterministik (seed'den).
 //
-// ÖNEMLİ: Arazi tipi ve şehirler tamamen DEKORATİFTİR. Oynanışa hiçbir
-// etkileri yoktur — ne fetih maliyetini ne hızı ne geliri değiştirirler.
-// Sadece harita gerçek bir ortaçağ haritası gibi dursun diye varlar.
-// Oyun kuralları yalnız kara/deniz ayrımını kullanır.
+// Arazi TİPİ (ova/orman/dağ) ve yükseklik hâlâ tamamen dekoratiftir: yalnız
+// rengi değiştirir, fetih maliyetine karışmaz.
+//
+// ŞEHİRLER ARTIK DEKORATİF DEĞİL. Her şehrin bir `size`'ı var ve iki şey yapar:
+//   - sahibine gelir katar (sim.js: incomePayout)
+//   - çevresindeki hücreleri PAHALANDIRIR (sim.js: cellCost)
+// İkisi de burada üretilen alanlardan okunur: `cityAt` hangi hücrede şehir
+// olduğunu, `cityDef` her hücrenin savunma çarpanını verir. Alanlar haritayla
+// birlikte, tohumdan bir kez hesaplanır — oyun döngüsünde şehir taraması yok.
 
 // Kıta 280×172'den büyütüldü: uluslar arasında daha çok yer, daha uzun
 // cepheler. S küçültülerek çizim boyutu yaklaşık aynı tutuldu.
@@ -16,6 +21,22 @@ export const PLAINS = 0, FOREST = 1, MOUNT = 2;
 
 // arazi tipine göre renk parlaklığı — yalnız çizim için
 export const TERRAIN_SHADE = [1.0, 0.85, 0.68];
+
+// --- şehir etkisi (oynanışa girer) ---
+// Şehrin savunma halkasının yarıçapı: taban + boyutla büyür. En küçük şehir
+// ~2.8, en büyüğü ~6.8 hücre. Şehirler birbirinden en az 8*SC hücre uzakta
+// kuruluyor, yani büyük şehirlerin halkaları örtüşebilir — çarpanlar TOPLANMAZ,
+// en büyüğü alınır (üst üste binen üç kasaba bir kaleye dönüşmesin).
+//
+// Halka DAR ve KESKİN tutuldu. Geniş ve yumuşak denendi (R = 4 + size*2.5,
+// tepe 0.6): kara hücrelerinin %68'ine değiyordu ve şehri almak net ZARARDI —
+// pahalanan ~360 hücrenin faturasını gelir ancak 173 saniyede kapatıyordu,
+// oysa bir oyun 144 saniye sürüyor. Şehir "belirsizce pahalı bölge" değil,
+// kırılması gereken bir kale olmalı.
+export const CITY_R0 = 2, CITY_R1 = 1.6;
+// Şehir merkezinde hücre bedeli bu kadar katlanır: 1 + size * CITY_DEF.
+// size 0.5 → 1.4 kat, size 3.0 → 3.4 kat. Halka kenarında 1'e iner.
+export const CITY_DEF = 0.8;
 
 export function mulberry32(seed) {
   return function () {
@@ -91,7 +112,7 @@ export function createWorld(seed, opts = {}) {
     else terrain[i] = PLAINS;
   }
 
-  // --- dekoratif şehirler: birbirinden uzak, isimli yerleşimler ---
+  // --- şehirler: birbirinden uzak, isimli, OYNANIŞA GİREN yerleşimler ---
   const cities = [];
   const MIN_D2 = (8 * SC) * (8 * SC);
   const land = [];
@@ -113,11 +134,34 @@ export function createWorld(seed, opts = {}) {
     });
   }
 
+  // --- şehir alanları: hangi hücrede şehir var, hangi hücre ne kadar pahalı ---
+  // Oyun döngüsü bunları O(1) okur; şehir listesini hiç taramaz.
+  const cityAt = new Int16Array(W * H).fill(-1);
+  const cityDef = new Float32Array(W * H).fill(1);
+  for (let ci = 0; ci < cities.length; ci++) {
+    const city = cities[ci];
+    cityAt[idx(city.x, city.y)] = ci;
+    const R = CITY_R0 + city.size * CITY_R1;
+    const tepe = city.size * CITY_DEF;
+    const r = Math.ceil(R);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const x = city.x + dx, y = city.y + dy;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const i = idx(x, y);
+      if (!isLand[i]) continue;                 // deniz zaten ele geçmiyor
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > R) continue;
+      // Örtüşen halkalar TOPLANMAZ: en güçlüsü kazanır.
+      const k = 1 + tepe * (1 - d / R);
+      if (k > cityDef[i]) cityDef[i] = k;
+    }
+  }
+
   // yükseklik gölgesi (0..1) — yalnız çizim için
   const shade = new Float32Array(W * H);
   const hi = quantile(elev, isLand, 0.02);
   for (let i = 0; i < W * H; i++)
     shade[i] = isLand[i] ? clamp((elev[i] - tLand) / Math.max(1e-6, hi - tLand), 0, 1) : 0;
 
-  return { seed, isLand, terrain, shade, cities, landCells };
+  return { seed, isLand, terrain, shade, cities, cityAt, cityDef, landCells };
 }

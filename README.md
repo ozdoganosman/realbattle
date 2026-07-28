@@ -37,12 +37,46 @@ indirmek oyunu kabaca iki katına çıkarır.
 | **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
 | **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** ve **süren bütün seferleri o anda geri çağrılır** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
 | **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. Kural iki yönlüdür: lidere teklif götüremezsin, lider konumundaysan sana da kimse yanaşmaz. |
+| **Şehirler** | Haritadaki isimli yerleşimler **oynanışa girer**. Her şehrin bir büyüklüğü var; sahibine büyüklüğüyle orantılı **gelir** katar ve çevresindeki hücreleri **pahalandırır** — merkezde bedel **3.4 kata** kadar çıkar, halkanın kenarında 1'e iner. Surlar sahibinden bağımsızdır: şehir kimin elindeyse onu korur. Zengin bölge aynı zamanda sert bölgedir, gelir bedavaya gelmez. |
+| **Kuşatma şehirde yavaşlar** | Cephe pahalı bir halkaya girince **yavaşlar**: iki kat pahalı halka yarı hızla dolar. Halkanın *içinde* ilerleme yine eşittir — sınır tek parça hareket eder — ama surlara dayanan cephe gözle görülür biçimde takılır. |
 
 Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
-Haritadaki arazi tipleri ve isimli şehirler **tamamen dekoratiftir** — fetih
-maliyetini, hızı ya da geliri etkilemezler. Sadece harita gerçek bir ortaçağ
-haritası gibi dursun diye varlar.
+Haritadaki **arazi tipleri** (ova/orman/dağ) ve yükseklik hâlâ tamamen
+dekoratiftir — yalnız rengi değiştirirler. Oynanışa giren tek harita öğesi
+şehirlerdir.
+
+### Şehirler ne kadar değer?
+
+Sayılar ölçülerek seçildi, tahminle değil.
+
+| | ölçüm |
+|---|---|
+| Haritada şehir | ~300 (tohum 11: 297, toplam büyüklük 337) |
+| Karanın kaçı düz | **%76** — halka haritayı kaplamaz, cepte kalır |
+| Sert kuşak (1.5×+) | %6.6, bunun %1.6'sı **kale** (2.0×+) |
+| Şehri almanın geri ödemesi | **8–38 sn** (ortalama 15) — bir oyun ~144 sn |
+| Gelirin şehir payı | %17–23 arası, dağılıma göre |
+| Kale hücresinin sınırda kalma olasılığı | düz araziye göre **1.38 kat** |
+
+Geri ödeme ölçütü belirleyici oldu: ilk denemede halka geniş ve yumuşaktı
+(karanın %68'ine değiyordu) ve şehri almak **net zarardı** — fazladan fatura
+ancak 173 saniyede kapanıyordu, yani oyun bitmeden. Halka daraltılıp
+keskinleştirildi, gelir yükseltildi.
+
+Cephenin pahalı halkada yavaşlaması da ölçümle geldi: bütçe salt ilerleme
+biriminde tutulduğunda cephe şehrin üstünden aynı süratle geçip yalnız daha çok
+asker yakıyordu — 10 tohumda ölçüldü, savunma çarpanı yüksek hücrelerin sınırda
+kalma oranı düz araziden ayırt edilemiyordu. Yavaşlama eklenince kale hücreleri
+**1.38 kat** daha sık sınırda kalır oldu ve etki savunma gücüyle birlikte tek
+yönlü arttı (1.03 → 1.07 → 1.19 → 1.38).
+
+**Rapor edilen, düzeltilmeyen:** YZ'ye şehir iştahı katsayısı eklendi
+(`nat.cityGreed`) ama kontrollü A/B'de **ölçülebilir etkisi çıkmadı**
+(30 tohum × 2 atama, 8'e 8 ulus: fark −0.09 puan, t ≈ −0.12). Nedeni yapısal:
+saldırı bir *ulusu* hedefliyor ve cephe onunla paylaşılan bütün sınır hattı —
+"şu şehre yürü" diye bir hamle yok. Şehirler ekonomiyi ve sınırların nereye
+oturduğunu değiştiriyor, hedef seçimini değil.
 
 ## Hissiyat
 
@@ -55,6 +89,9 @@ haritası gibi dursun diye varlar.
 - Süren cepheye tekrar dokunmak **takviye** gönderir; şerit ne kadar asker
   gittiğini ve cephede toplam kaç asker olduğunu yeşille yazar
 - Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
+- Şehir noktası **sahibinin rengiyle** dolar; surların içi haritada koyulaşır,
+  yani pahalı toprak gözle seçilir ve cephenin neden orada takıldığı görülür
+- İmleci bir şehrin üstüne getirince adı, halkasının içindeyken bedel çarpanı yazar
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır
@@ -81,15 +118,15 @@ npm run build
 ```
 
 `dist/realbattle.html` — bütün modüllerin ve CSS'in tek dosyaya paketlenmiş,
-kendi başına açılan hâli (~100 KB). Dış bağımlılığı yok; doğrudan çift
+kendi başına açılan hâli (~118 KB). Dış bağımlılığı yok; doğrudan çift
 tıklayarak da açılır. `dist/artifact.html` ise `<head>`'i kendi sağlayan
 ortamlar için yalnız gövde içeriğini taşır.
 
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (83)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (56)
+npm test               # başsız simülasyon (90)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (59)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
 ```
@@ -113,7 +150,8 @@ PAGE=/dist/realbattle.html npm run test:mobile
 
 ```
 js/world.js         Harita üretimi. Seed'den deterministik.
-                    Arazi ve şehirler yalnız çizim içindir.
+                    Arazi tipi yalnız çizim içindir; ŞEHİRLER oynanışa girer
+                    (cityAt / cityDef alanları tohumdan bir kez hesaplanır).
 js/sim.js           Bütün oyun kuralları. DOM yok, Math.random yok, Date yok.
                     Tek giriş noktası: createSim(seed) + step(dt, realDt).
 js/render.js        Canvas çizimi ve efektler. Simülasyonu sadece okur.

@@ -8,7 +8,8 @@ import {
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   INCOME_SCALE, incomePayout,
-  startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts,
+  startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, cellCost,
+  frontCost, frontCosts, frontStats,
   formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
@@ -219,16 +220,28 @@ function showChip(sx, sy, o) {
   const chip = $('target-chip');
   const me = sim.nations[sim.playerId];
   if (o === undefined || o === me.id) { hideChip(); return; }
-  const cost = attackCost(sim, o);
+  // Kaç hücre alacağı cephenin ORTALAMA birim bedeline bağlı: şehir halkasından
+  // geçen bir cephede aynı asker belirgin biçimde daha az toprak alır. Taban
+  // bedelle hesaplamak oyuncuya olduğundan fazlasını vaat ediyordu.
+  const st = frontMap().get(o);
+  const birim = st ? st.birim : attackCost(sim, o);
   const troops = gidecek(me, o);
-  const cells = Math.floor(troops / cost);
+  const cells = Math.floor(troops / birim);
   const ad = o < 0 ? 'Boş toprak' : sim.nations[o].name;
   let uyari = '';
   if (o >= 0 && allied(me, sim.nations[o])) uyari = '<i>müttefikin</i>';
   else if (locked(sim, me)) uyari = '<i>ihanet cezan sürüyor</i>';
   // Cephe açıksa dokunuş yeni sefer açmaz, var olana takviye gider.
   const acik = sim.attacks.some(a => a.from === me.id && a.target === o);
-  chip.innerHTML = `<b>${ad}</b>` +
+  // İmlecin altındaki hücre bir şehirse ya da surlarının içindeyse söyle:
+  // bedelin neden yüksek olduğu haritadan okunabilmeli.
+  const c = ui.hoverCell;
+  const ci = c >= 0 ? sim.world.cityAt[c] : -1;
+  const kat = c >= 0 ? sim.world.cityDef[c] : 1;
+  const sehir = ci >= 0
+    ? ` <span class="city">🏰 ${sim.world.cities[ci].name}</span>`
+    : kat > 1.05 ? ` <span class="city">🏰 surlar · ${kat.toFixed(1)}× bedel</span>` : '';
+  chip.innerHTML = `<b>${ad}</b>${sehir}` +
     (uyari ? ` — ${uyari}`
            : ` · ${acik ? '<i>takviye</i> ' : ''}<b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
@@ -348,12 +361,14 @@ function commitOf(me) {
 // Ölçüt GERÇEK zaman: oyun duraklatıldığında sim.t donuyor ve önbellek hiç
 // tazelenmiyordu — etiket, haritanın eski hâlini gösterip gerçekte gidenden
 // sapıyordu.
+// Değerler {bedel, hucre, birim}: hücre bedeli artık cephe boyunca sabit
+// olmadığı için "kaç hücre alır" ancak ORTALAMA birim bedelle söylenebilir.
 let cepheler = new Map(), cepheAn = -9e9;
 function frontMap() {
   if (sim.playerId < 0) return cepheler;
   const simdi = performance.now();
   if (simdi - cepheAn > 250) {
-    cepheler = frontCosts(sim, sim.nations[sim.playerId]);
+    cepheler = frontStats(sim, sim.nations[sim.playerId]);
     cepheAn = simdi;
   }
   return cepheler;
@@ -370,7 +385,8 @@ function halkaYuvarla(me, halka, istenen) {
   return n * halka;
 }
 function gidecek(me, target) {
-  return halkaYuvarla(me, frontMap().get(target), commitOf(me));
+  const st = frontMap().get(target);
+  return halkaYuvarla(me, st && st.bedel, commitOf(me));
 }
 
 function refreshPct() {
@@ -379,7 +395,7 @@ function refreshPct() {
   const istenen = commitOf(me);
   // En ucuz komşu cephe: dokunulacak yer belli değilken hesap buna göre.
   let enUcuz = Infinity;
-  for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
+  for (const st of frontMap().values()) enUcuz = Math.min(enUcuz, st.bedel);
   const halka = enUcuz < Infinity ? enUcuz : 0;
   const troops = halka ? halkaYuvarla(me, halka, istenen) : istenen;
   const elde = Math.max(0, me.pool);
@@ -444,6 +460,11 @@ function refreshTreasury(me) {
   $('cap-soft').style.display = borclu ? 'none' : '';
   const pay = incomePayout(sim, me);
   $('econ-inc').textContent = `+${fmt(pay.land)}` + (borclu ? ' → borca' : '');
+  // Şehir geliri toprağa değil, elindeki şehirlerin büyüklüğüne bağlı — kaç
+  // şehir tuttuğun yanında yazıyor ki iki gelirin ayrı işlediği görünsün.
+  $('econ-city').textContent = me.cityCount
+    ? `+${fmt(pay.city)} (${me.cityCount} şehir)`
+    : 'şehrin yok';
   $('econ-balloon').textContent = borclu ? '—' : `+${fmt(pay.balloon)}`;
   $('econ-soft').textContent = borclu
     ? `borç ${fmt(-me.pool)} / ${fmt(maxDebt(sim, me))}`
@@ -484,7 +505,9 @@ function refreshCycle(me, borclu) {
   const pay = incomePayout(sim, me);
   $('cycle-note').innerHTML = borclu
     ? `<b>${fmt(pay.land)}</b> ödeme <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
-    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)} + balon ${fmt(pay.balloon)})</span>` +
+    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)}` +
+      (pay.city > 0 ? ` + şehir ${fmt(pay.city)}` : '') +
+      ` + balon ${fmt(pay.balloon)})</span>` +
       ` <b>${kalan.toFixed(1)}sn</b> sonra`;
   refreshMini(me, borclu, kalan);
 }
@@ -655,6 +678,7 @@ function refreshDiplo() {
       `<span class="sw" style="background:${n.color}"></span>` +
       `<span class="nm">${n.name}</span>` +
       `<span class="pc">${(landFrac(sim, n) * 100).toFixed(1)}%</span>` +
+      `<span class="ct" title="Elindeki şehir">${n.cityCount ? '🏰' + n.cityCount : ''}</span>` +
       `<span class="tr" title="Garnizondaki asker">${n.pool < 0
         ? `<i class="debt">−${fmt(-n.pool)}</i>` : fmt(n.pool)}</span>` +
       `<span class="st">${self ? 'sen' : ally ? 'ittifak' : 'yğ ' + density(n).toFixed(1)}</span>`;

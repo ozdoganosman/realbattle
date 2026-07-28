@@ -7,7 +7,7 @@ import {
   density, power, BETRAY_LOCK, WIN_FRAC,
   interestRate, softCap, hardCap, maxDebt, maxCommit, inDebt,
   TICK, TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
-  incomePayout, INCOME_SCALE, frontCost, minCells, ALLY_SECS,
+  incomePayout, INCOME_SCALE, frontCost, frontStats, cellCost, minCells, ALLY_SECS,
 } from '../js/sim.js';
 import { W, H, idx } from '../js/world.js';
 
@@ -565,10 +565,12 @@ t('takviye cephenin hızını yeniden hesaplar', () => {
   if (!g) return;
   const { s, nat } = g;
   const cephe = frontCost(s, nat, -1);
-  const birim = attackCost(s, -1);
   nat.pool = hardCap(s, nat);
   const a = startAttack(s, nat, -1, cephe * 2);
   const hizOnce = a.rate;
+  // Hız cephenin ORTALAMA hücre bedeline göre kurulur — şehir halkasından
+  // geçen cephede hücreler tek tek pahalıdır, tek bir taban bedel yetmez.
+  const birim = frontStats(s, nat).get(-1).birim;
   startAttack(s, nat, -1, cephe * 2);
   assert(a.rate > hizOnce, `hız güncellenmedi: ${hizOnce.toFixed(2)} → ${a.rate.toFixed(2)}`);
   // dalga yine ~ATTACK_SECS saniyede akmalı (taban hız devrede değilse)
@@ -617,14 +619,23 @@ t('takviye yoktan asker üretmez', () => {
   const { s, nat } = g;
   for (const n of s.nations) n.ai = false;        // dışarıdan toprak el değiştirmesin
   const K = attackCost(s, -1);
-  const c0 = nat.cells;
+  // Hücre bedeli artık cephe boyunca sabit değil (şehir halkası pahalı), o
+  // yüzden hem kuşatma hem de alınan toprak HÜCRE HÜCRE fiyatlanmalı — tek
+  // skalerle ölçmek şehirden geçen bir cepheyi sahte sapma gibi gösterirdi.
+  const cd = s.world.cityDef;
+  const toprak = () => {
+    let v = 0;
+    for (let c = 0; c < W * H; c++) if (s.owner[c] === nat.id) v += K * cd[c];
+    return v;
+  };
+  const t0 = toprak();
   const kusatma = () => {
     let p = 0;
-    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c];
-    return p * K;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c] * K * cd[c];
+    return p;
   };
   const V = () => nat.pool + s.attacks.filter(a => a.from === nat.id)
-    .reduce((t, a) => t + a.troops, 0) + kusatma() + (nat.cells - c0) * K;
+    .reduce((t, a) => t + a.troops, 0) + kusatma() + (toprak() - t0);
 
   const halka = frontCost(s, nat, -1);
   nat.pool = hardCap(s, nat);      // hazine BİR KEZ dolar; döngü içinde asker
@@ -658,19 +669,27 @@ t('eşiği geçen hücre tam bedelini öder', () => {
   assert(a, 'sefer başlamadı');
   const canli = a.layer.filter(c => s.owner[c] === -1);
   assert(canli.length > 20, `cephe çok kısa (${canli.length})`);
+  const cd = s.world.cityDef;
   for (const c of canli) { s.prog[c] = 0.9985; s.progBy[c] = nat.id; }
-  a.yatirim = canli.length * 0.9985 * K;          // defter haritayla hizalansın
+  // defter haritayla hizalansın — hücre bedeli şehir halkasında değişir
+  a.yatirim = canli.reduce((t, c) => t + 0.9985 * K * cd[c], 0);
   a.rate = canli.length * 0.001 * 60;             // pay ≈ 0.001 → 0.9995'te düşer
   s.tickAcc = 0;                                  // tek karede büyüme tiki olmasın
 
+  const toprak = () => {
+    let v = 0;
+    for (let c = 0; c < W * H; c++) if (s.owner[c] === nat.id) v += K * cd[c];
+    return v;
+  };
+  const t0 = toprak();
   const c0 = nat.cells;
   const kusatma = () => {
     let p = 0;
-    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c];
-    return p * K;
+    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) p += s.prog[c] * K * cd[c];
+    return p;
   };
   const V = () => nat.pool + s.attacks.filter(x => x.from === nat.id)
-    .reduce((t, x) => t + x.troops, 0) + kusatma() + (nat.cells - c0) * K;
+    .reduce((t, x) => t + x.troops, 0) + kusatma() + (toprak() - t0);
 
   const once = V();
   step(s, 1 / 60, 1 / 60);
@@ -706,9 +725,9 @@ t('sefer defteri haritadaki kuşatmayla birebir tutar', () => {
   for (let adim of [10, 30, 60, 120]) {
     for (let i = 0; i < adim; i++) step(s, 1 / 60, 1 / 60);
     if (!s.attacks.includes(a)) break;
-    let harita = 0;
-    for (let c = 0; c < W * H; c++) if (s.progBy[c] === nat.id) harita += s.prog[c];
-    const degeri = harita * birim;
+    let degeri = 0;
+    for (let c = 0; c < W * H; c++)
+      if (s.progBy[c] === nat.id) degeri += s.prog[c] * birim * s.world.cityDef[c];
     // sim.prog Float32Array — kayan nokta payı göreli, mutlak değil
     assert(Math.abs(a.yatirim - degeri) < 1e-5 * (1 + degeri),
       `defter ${a.yatirim.toFixed(3)}, haritada ${degeri.toFixed(3)}`);
@@ -960,7 +979,7 @@ t('gelir tikinde faizin balon ödemesi de yatıyor', () => {
   // balon, tek tik faizinden belirgin biçimde büyük olmalı
   const tekTik = nat.pool * interestRate(s, nat);
   assert(p.balloon > tekTik * 3, `balon ${p.balloon.toFixed(0)}, tek tik ${tekTik.toFixed(0)}`);
-  assert(Math.abs(p.total - (p.land + p.balloon)) < 1e-6);
+  assert(Math.abs(p.total - (p.land + p.city + p.balloon)) < 1e-6);
 });
 
 t('borçtayken balon ödemesi işlemez', () => {
@@ -977,6 +996,10 @@ t('arazi geliri toprakla orantılı', () => {
     for (const n of s.nations) n.ai = false;
     const nat = s.nations[0];
     nat.cells = cells; nat.pool = 0;         // faiz 0 üzerinden çalışmaz
+    // Ölçülen ARSA geliri. `cells` haritaya dokunmadan taklit edildiği için
+    // şehir defteri burada anlamsız bir sabit; sıfırlanmazsa 4 kat toprağın
+    // gelirine 4 kat büyümeyen bir terim eklenip oranı bozuyor.
+    nat.cityScore = 0;
     for (let i = 0; i < 130; i++) step(s, 0.05, 0.05);   // bir gelir döngüsünü aşar
     return nat.pool;
   };
@@ -1000,7 +1023,9 @@ t('ödemeler kesikli: gelir tam onuncu tikte yatıyor', () => {
   // ilk dokuz tikte hiçbir şey yatmamalı, onuncuda toplu ödeme
   assert.deepEqual(yatan.slice(0, 9), new Array(9).fill(0),
     `erken ödeme var: ${yatan.join(',')}`);
-  const beklenen = Math.round(incomePayout(s, nat).land);
+  // arsa + şehir; balon havuz 0 olduğu için sıfır
+  const p = incomePayout(s, nat);
+  const beklenen = Math.round(p.land + p.city);
   assert(Math.abs(yatan[9] - beklenen) <= 2,
     `onuncu tikte ${yatan[9]} yattı, ~${beklenen} beklendi`);
 });
@@ -1270,6 +1295,188 @@ t('asker havuzu tavanı aşmaz, negatife düşmez', () => {
       assert(n.pool <= troopCap(s, n) + 1, `${n.name} tavanı aştı`);
     }
   }
+});
+
+// ---------------------------------------------------------------- şehirler
+
+console.log('\nŞehirler');
+
+t('şehir hücresi çevresini pahalandırıyor', () => {
+  const s = createSim(11);
+  const cd = s.world.cityDef;
+  const buyuk = [...s.world.cities].sort((a, b) => b.size - a.size)[0];
+  const merkez = idx(buyuk.x, buyuk.y);
+  let duz = -1;
+  for (let c = 0; c < W * H; c++) if (s.world.isLand[c] && cd[c] === 1) { duz = c; break; }
+  assert(duz >= 0, 'haritada hiç düz arazi yok');
+  assert(cd[merkez] > 1.5, `en büyük şehrin çarpanı ${cd[merkez].toFixed(2)} — halka çalışmıyor`);
+  assert(cellCost(s, -1, merkez) > cellCost(s, -1, duz) * 1.5,
+    `şehir ${cellCost(s, -1, merkez).toFixed(1)}, düz ${cellCost(s, -1, duz).toFixed(1)}`);
+  // taban bedel hedefe ait, çarpan hücreye — ikisi ayrı kalmalı
+  assert(Math.abs(cellCost(s, -1, duz) - attackCost(s, -1)) < 1e-9,
+    'düz arazide hücre bedeli taban bedelden sapıyor');
+});
+
+t('şehir çarpanı sahibinden bağımsız — surlar kimin elindeyse onu korur', () => {
+  const s = fresh();
+  const buyuk = [...s.world.cities].sort((a, b) => b.size - a.size)[0];
+  const c = idx(buyuk.x, buyuk.y);
+  const once = s.world.cityDef[c];
+  s.owner[c] = 3;
+  assert.equal(s.world.cityDef[c], once, 'çarpan sahip değişince kaydı');
+});
+
+t('şehir sahibine gelir katıyor', () => {
+  const s = createSim(11);
+  const nat = s.nations[0];
+  nat.cells = 500;
+  nat.cityScore = 0;
+  const sehirsiz = incomePayout(s, nat);
+  assert.equal(sehirsiz.city, 0, 'şehirsizken şehir geliri var');
+  nat.cityScore = 10;
+  const sehirli = incomePayout(s, nat);
+  assert(sehirli.city > 0, 'şehir geliri yatmıyor');
+  assert(sehirli.total > sehirsiz.total, 'şehir toplam geliri artırmadı');
+  // gelir `size` toplamıyla DOĞRUSAL: iki katı şehir, iki katı gelir
+  nat.cityScore = 20;
+  assert(Math.abs(incomePayout(s, nat).city - sehirli.city * 2) < 1e-6,
+    'şehir geliri doğrusal değil');
+});
+
+// cityScore take() içinde O(1) taşınıyor — harita taranmıyor. Defterin
+// haritayla ayrışması, gelirin yoktan doğması ya da buharlaşması demek.
+t('şehir defteri haritayla birebir tutuyor', () => {
+  const s = createSim(2024);
+  for (let i = 0; i < 3000; i++) step(s, 0.05, 0.05);
+  for (const nat of s.nations) {
+    let puan = 0, adet = 0;
+    for (let ci = 0; ci < s.world.cities.length; ci++) {
+      const city = s.world.cities[ci];
+      if (s.owner[idx(city.x, city.y)] === nat.id) { puan += city.size; adet++; }
+    }
+    assert(Math.abs(nat.cityScore - puan) < 1e-9,
+      `${nat.name}: defter ${nat.cityScore.toFixed(3)}, haritada ${puan.toFixed(3)}`);
+    assert.equal(nat.cityCount, adet, `${nat.name}: şehir sayısı ${nat.cityCount} ≠ ${adet}`);
+  }
+});
+
+// Şehir el değiştirince İKİ defter birden hareket etmeli: kaybedenden düşer,
+// alana eklenir. Kurulum tohuma bırakılamaz — 4242'de 0 numaralı ulus şehirsiz
+// doğuyor ve test hiçbir şey ölçmeden geçiyordu. Bu yüzden uygun tohum/ulus
+// ikilisi TARANIR ve bulunamaması testin başarısızlığı sayılır.
+t('şehir el değiştirince gelir de el değiştirir', () => {
+  // Aranan kurulum: SINIR HATTININ ÜSTÜNDE duran bir şehir — yani savunana ait,
+  // saldırana komşu bir şehir hücresi. Böyle bir hücre cephenin ilk halkasında
+  // olduğu için tek dalgada düşer; şehre "bir yerlerden ulaşmayı" ummak yok.
+  // (t=0'da uluslar ayrı adacıklar hâlinde, hiç cephe yok — ölçüldü: ilk ulus
+  // sınırı ~1600. adımda oluşuyor, ilk sınır şehri de orada. Pencere bunun
+  // belirgin ötesine kadar açık.)
+  let kur = null;
+  for (let seed = 1; seed <= 40 && !kur; seed++) {
+    const s = createSim(seed);
+    for (let adim = 0; adim < 3200 && !kur; adim++) {
+      step(s, 0.05, 0.05);
+      if (adim % 50) continue;
+      for (const city of s.world.cities) {
+        const c = idx(city.x, city.y);
+        const savunanId = s.owner[c];
+        if (savunanId < 0) continue;
+        const x = c % W;
+        const nb = [];
+        if (x > 0) nb.push(c - 1);
+        if (x < W - 1) nb.push(c + 1);
+        if (c >= W) nb.push(c - W);
+        if (c < W * (H - 1)) nb.push(c + W);
+        for (const n of nb) {
+          const o = s.owner[n];
+          if (o < 0 || o === savunanId || !s.world.isLand[n]) continue;
+          kur = { s, saldiran: s.nations[o], savunan: s.nations[savunanId], hedef: c, size: city.size };
+          break;
+        }
+        if (kur) break;
+      }
+    }
+  }
+  assert(kur, '40 tohumda cephe hattı üstünde şehir bulunamadı');
+  const { s, saldiran, savunan, hedef, size } = kur;
+  for (const n of s.nations) n.ai = false;      // yalnız ölçülen sefer koşsun
+  saldiran.allies.clear(); savunan.allies.clear();
+  saldiran.lockUntil = 0;
+  const aOnce = savunan.cityScore, bOnce = saldiran.cityScore;
+  saldiran.pool = hardCap(s, saldiran);
+  const a = startAttack(s, saldiran, savunan.id, maxCommit(s, saldiran));
+  assert(a, 'sefer açılmadı');
+  for (let i = 0; i < 4000 && s.owner[hedef] === savunan.id; i++) step(s, 0.05, 0.05);
+  assert.equal(s.owner[hedef], saldiran.id, 'şehir el değiştirmedi — ölçüm yapılamadı');
+  // Dalga bir halkadan fazlasını alabilir, yani hedef şehirle birlikte başka
+  // şehirler de düşmüş olabilir. İki ayrı ölçüt: (1) EN AZ hedef şehir kadar
+  // hareket, (2) iki defter de haritayla BİREBİR — böylece "ne kadar" sorusu
+  // da bağlanır, fazla/eksik taşınan puan yakalanır.
+  assert(savunan.cityScore <= aOnce - size + 1e-6,
+    `kaybedenin defteri ${aOnce.toFixed(2)} → ${savunan.cityScore.toFixed(2)}, en az ${size.toFixed(2)} düşmeliydi`);
+  assert(saldiran.cityScore >= bOnce + size - 1e-6,
+    `alanın defterine en az ${size.toFixed(2)} eklenmedi (${bOnce.toFixed(2)} → ${saldiran.cityScore.toFixed(2)})`);
+  const gercek = (nat) => {
+    let t = 0;
+    for (const city of s.world.cities)
+      if (s.owner[idx(city.x, city.y)] === nat.id) t += city.size;
+    return t;
+  };
+  for (const nat of [saldiran, savunan])
+    assert(Math.abs(nat.cityScore - gercek(nat)) < 1e-9,
+      `${nat.name}: defter ${nat.cityScore.toFixed(3)}, haritada ${gercek(nat).toFixed(3)}`);
+});
+
+t('dağılan ulusun şehir defteri sıfırlanır', () => {
+  const s = fresh();
+  const nat = s.nations[5];
+  nat.cityScore = 99; nat.cityCount = 7;
+  // eşiğin altına düşür: dağılma yolu kill(s, nat, true)
+  const esik = minCells(s);
+  let kalan = esik - 1;
+  for (let c = 0; c < W * H && nat.cells > kalan; c++) {
+    if (s.owner[c] !== nat.id) continue;
+    s.owner[c] = -1; nat.cells--;
+  }
+  startAttack(s, s.nations[0], -1, 1);          // step'i bir tur döndür
+  step(s, 0.05, 0.05);
+  if (nat.alive) return;                        // dağılma tetiklenmedi
+  assert.equal(nat.cityScore, 0, 'dağılan ulusun şehir puanı kaldı');
+  assert.equal(nat.cityCount, 0, 'dağılan ulusun şehir sayısı kaldı');
+});
+
+// Şehir görünür olmalı: cephe pahalı halkaya girince YAVAŞLAMALI. Bütçe salt
+// ilerleme biriminde tutulduğunda cephe şehrin üstünden aynı süratle geçiyor,
+// sadece daha çok asker yakıyordu — 10 tohumda ölçüldü, sahipsiz toprağın
+// savunma çarpanı ortalamanın ancak %1.2 üstündeydi (yani şehir yok gibiydi).
+t('cephe pahalı halkada yavaşlar', () => {
+  const s = createSim(11);
+  for (const n of s.nations) n.ai = false;
+  const nat = s.nations[0];
+  nat.pool = hardCap(s, nat);
+  const a = startAttack(s, nat, -1, frontCost(s, nat, -1) * 4);
+  assert(a, 'sefer başlamadı');
+  // Açılış halkasının ağırlığı kaydedilmeli; yoksa oran hesaplanamaz.
+  assert(a.agirlik >= 1, 'açılış halka ağırlığı kaydedilmedi');
+
+  // Aynı seferi iki kez tek kare işlet: bir kez olduğu gibi, bir kez de halka
+  // yapay olarak iki kat pahalılaştırılmış. İkincisi yarı kadar ilerlemeli.
+  const olc = (carpan) => {
+    const t = createSim(11);
+    for (const n of t.nations) n.ai = false;
+    const tn = t.nations[0];
+    tn.pool = hardCap(t, tn);
+    const ta = startAttack(t, tn, -1, frontCost(t, tn, -1) * 4);
+    for (const c of ta.layer) t.world.cityDef[c] *= carpan;
+    t.tickAcc = 0;
+    step(t, 1 / 60, 1 / 60);
+    let p = 0;
+    for (const c of ta.layer) if (t.progBy[c] === tn.id) p += t.prog[c];
+    return p;
+  };
+  const normal = olc(1), pahali = olc(2);
+  assert(pahali < normal * 0.75,
+    `pahalı halka yavaşlamadı: ${normal.toFixed(3)} → ${pahali.toFixed(3)} ilerleme`);
 });
 
 t('yapay zekâ fiilen saldırıyor ve harita doluyor', () => {

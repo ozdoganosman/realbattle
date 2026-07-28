@@ -44,7 +44,7 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
   // ---------------------------------------------------------------- taban
 
   function paintBase(hover) {
-    const { isLand, shade, terrain } = sim.world;
+    const { isLand, shade, terrain, cityDef } = sim.world;
     const t = sim.t;
     for (let y = 0, i = 0, p = 0; y < H; y++) for (let x = 0; x < W; x++, i++, p += 4) {
       let r, g, b;
@@ -61,8 +61,13 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
         let h = (x * 73856093) ^ (y * 19349663);
         h = (h ^ (h >>> 13)) >>> 0;
         const grain = (h & 11) - 5.5;
-        // arazi tipi ve yükseklik yalnız renk tonunu değiştirir, oynanışı değil
-        const f = TERRAIN_SHADE[terrain[i]] * (0.96 + shade[i] * 0.08);
+        // Arazi tipi ve yükseklik yalnız renk tonunu değiştirir, oynanışı
+        // değil. Şehrin savunma halkası ise TERSİ: oynanışa girer, o yüzden
+        // görünmek zorunda. Surların içi koyulaşır — bedeli yüksek toprak
+        // haritada koyu bir leke olarak okunur, cephenin neden orada takıldığı
+        // görülür. Katsayı ölçüldü: en sert şehir çekirdeği 0.69 parlaklık.
+        const f = TERRAIN_SHADE[terrain[i]] * (0.96 + shade[i] * 0.08)
+          * (1 - (cityDef[i] - 1) * 0.13);
         r = c[0] * f + grain; g = c[1] * f + grain; b = c[2] * f + grain;
 
         // Kuşatma altındaki hücre saldıranın rengine doğru KAYAR: cephenin
@@ -113,16 +118,22 @@ export function createRenderer(sim, mapCanvas, fxCanvas) {
     }
   }
 
-  // Dekoratif yerleşimler — hiçbir oyun etkisi yok, harita dolu dursun diye.
+  // Yerleşimler. Artık dekoratif DEĞİL: sahibine gelir katıyor ve çevresini
+  // pahalandırıyor, o yüzden kimin elinde olduğu haritadan okunmalı — nokta
+  // sahibinin rengiyle dolar, sahipsizse parşömen kalır.
   function paintCities() {
     mctx.textAlign = 'center';
     mctx.textBaseline = 'middle';
     for (const c of sim.world.cities) {
       const x = c.x * S + S / 2, y = c.y * S + S / 2;
       const r = clamp(1.8 + c.size * 1.5, 2, 6);
+      const o = sim.owner[idx(c.x, c.y)];
       mctx.beginPath();
       mctx.arc(x, y, r, 0, Math.PI * 2);
-      mctx.fillStyle = 'rgba(244,232,204,0.9)';
+      if (o >= 0) {
+        const p = pal[o];
+        mctx.fillStyle = `rgb(${p[0]},${p[1]},${p[2]})`;
+      } else mctx.fillStyle = 'rgba(244,232,204,0.9)';
       mctx.fill();
       mctx.lineWidth = 1;
       mctx.strokeStyle = 'rgba(34,22,10,0.72)';

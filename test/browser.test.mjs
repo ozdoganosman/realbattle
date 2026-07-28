@@ -546,6 +546,67 @@ check('sayaçlar sıçramadan akıyor', await page.evaluate(async () => {
   return ara > 0 && ara < me.pool;       // yolda, henüz varmamış
 }));
 
+// ---------------------------------------------------------------- şehirler
+// Şehirler artık dekoratif değil: sahibine gelir katıyorlar ve çevrelerini
+// pahalandırıyorlar. İkisi de arayüzde GÖRÜNMELİ, yoksa oyuncu bedelin neden
+// yükseldiğini anlamadan cephesini eritir.
+console.log('\nŞehirler');
+
+check('şehir geliri hazine panelinde yazıyor', await page.evaluate(async () => {
+  const { sim } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.cityScore = 0; me.cityCount = 0;
+  await new Promise(r => setTimeout(r, 200));
+  const bos = document.getElementById('econ-city').textContent;
+  me.cityScore = 12; me.cityCount = 4;
+  await new Promise(r => setTimeout(r, 200));
+  const dolu = document.getElementById('econ-city').textContent;
+  return bos.includes('şehrin yok') && dolu.includes('4 şehir') && /\d/.test(dolu);
+}));
+
+check('şehir geliri toplam ödemeye giriyor', await page.evaluate(() => {
+  const { sim, api } = window.__rb;
+  const me = sim.nations[sim.playerId];
+  me.cityScore = 0;
+  const yok = api.incomePayout(sim, me);
+  me.cityScore = 20;
+  const var_ = api.incomePayout(sim, me);
+  return yok.city === 0 && var_.city > 0
+    && Math.abs(var_.total - (var_.land + var_.city + var_.balloon)) < 1e-6
+    && var_.total > yok.total;
+}));
+
+// Surların içi haritada koyulaşıyor: bedeli yüksek toprak görünür olmalı.
+check('şehir halkası haritada koyu leke bırakıyor', await page.evaluate(() => {
+  const { sim, S } = window.__rb;
+  const cd = sim.world.cityDef;
+  // en sert şehri ve ona yakın düz bir hücreyi karşılaştır
+  const buyuk = [...sim.world.cities].sort((a, b) => b.size - a.size)[0];
+  const W = window.__rb.W;
+  const cv = document.getElementById('map');
+  const ctx = cv.getContext('2d');
+  const oku = (x, y) => {
+    const d = ctx.getImageData(x * S + (S >> 1), y * S + (S >> 1), 1, 1).data;
+    return d[0] + d[1] + d[2];
+  };
+  // şehir merkezinin ÇEVRESİ (nokta çizimi merkezi kapatıyor) vs uzak düz hücre
+  let halka = -1, duz = -1;
+  for (let r = 2; r < 6 && halka < 0; r++) {
+    const c = (buyuk.y) * W + (buyuk.x + r);
+    if (sim.world.isLand[c] && cd[c] > 1.4 && sim.owner[c] === sim.owner[buyuk.y * W + buyuk.x])
+      halka = oku(buyuk.x + r, buyuk.y);
+  }
+  for (let r = 14; r < 40 && duz < 0; r++) {
+    const c = buyuk.y * W + (buyuk.x + r);
+    if (sim.world.isLand[c] && cd[c] === 1 && sim.owner[c] === sim.owner[buyuk.y * W + buyuk.x])
+      duz = oku(buyuk.x + r, buyuk.y);
+  }
+  // Karşılaştırılacak çift bulunamazsa test BAŞARISIZ sayılır — sessizce
+  // atlanan bir ölçüm, yapılmamış ölçümdür.
+  if (halka < 0 || duz < 0) return false;
+  return halka < duz;
+}));
+
 // ---------------------------------------------------------------- bitiş
 // Lider kuralı ÇİFT yönlü olmalı — YZ zaten lidere yanaşmıyor (aiThink), ama
 // arayüz yalnız OYUNCUNUN payına bakıyordu: oyuncu kaçan liderle ittifak kurup
