@@ -27,21 +27,83 @@ indirmek oyunu kabaca iki katına çıkarır.
 | **Sınır dalgası** | Dokunmak hedefi seçer, giriş noktasını değil: cephe hedefin sana değen bütün hücreleridir. Dalga **halka halka** ilerler ve bütçe halkanın bütün hücrelerine **eşit** dağıtılır: her hücrenin kuşatma ilerlemesi aynı anda, aynı hızda artar. Hücre ancak ilerlemesi dolunca el değiştirir, yani sınır her yerde birlikte hareket eder — sıra sıra tek hücre düşen fermuar ya da dağınık benek görüntüsü yok. Kopuk toprak oluşmaz. Deniz asla ele geçmez. |
 | **Tam halka** | Hamle **tam halkalara** yuvarlanır: sınır ya bir hücre birden ilerler ya hiç. Yarım halka bırakmak cepheyi tırtıklı, nokta nokta gösteriyordu. Sefer sürerken bütün cephe senin rengine doğru birlikte kayar (kuşatma), halka dolunca hep birlikte düşer. Artan kuşatma **iade** edilir — asker heba olmaz, haritada iz kalmaz. Kaydıracın altındaki yazı sınırı kaç hücre iteceğini söyler. |
 | **Bileşik büyüme** | Ödemeler kesikli. Her **0.56 sn**'lik tikte mevcut askerinin üstüne **bileşik faiz** — oran toprak payıyla yükselir ve aralık geniştir: bir avuç toprakla tik başına ~**%1.2**, kıtaya hükmederken ~**%14** (açılışta ayrıca 1.9 kat hızlı). Küçükken ekonomi sürünür, büyüdükçe uçar. Her **10. tikte** (5.6 sn) toplu ödeme: **arsa ödemesi** — toprakla üstel artar ama üs neredeyse 1 (toprak iki katına çıkınca ödeme ~2.04 kat), yani büyümek kendini az besler ve lider kaçamaz — artı **faiz balonu**, tik faizinin altı katı. Hazine panelindeki 10 haneli gösterge bir sonraki ödemeye ne kaldığını sayar. |
-| **Tavanlar** | Yumuşak tavan toprağın ~**114 katı**, sert tavan ~**171 katı** (eski tavanın 10 katı). İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok ama hazine çok derin, bileşik faiz uzun süre çalışıyor ve dolu hazineyle devasa hamleler yapılabiliyor. Savunma katsayısı bu büyümeyle birlikte bölünür, yani savunmanın *şekli* aynı kalır: boş hazine **2.5**, yumuşak tavan **21**, sert tavan **32** asker/hücre. |
+| **Tavanlar** | Yumuşak tavan toprağın ~**114 katı**, sert tavan ~**171 katı** (eski tavanın 10 katı). İkisi arasında faiz doğrusal olarak sıfıra iner — sonsuz birikim yok ama hazine çok derin, bileşik faiz uzun süre çalışıyor ve dolu hazineyle devasa hamleler yapılabiliyor. Savunma katsayısı bu büyümeyle birlikte bölünür, yani savunmanın *şekli* aynı kalır: boş hazine **4**, yumuşak tavan **34**, sert tavan **51** asker/hücre. |
 | **Kaydıraç eğrisi** | Kaydıracın **%88**'ine kadarı hazinendir ve eğri alt uçta yatıktır: düşük konumlar askerinin küçük bir dilimini sürer. Amaç tek büyük hamle değil, **seri seri küçük hamleler**. |
 | **Borçlanma** | Borç bölgesi kaydıracın son diliminde (kırmızı) sabittir — oraya çekmeden borçlanmazsın. Borç sınırı toprağın ~**29 katı** — sert tavanın %17'si, tavanla birlikte ölçeklenir. Hazinen bittiğinde de saldırabilirsin, ama bu bilinçli bir tercihtir: askerin eksiye düşer, gelen ödemenin tamamı borca gider, borç kendi faiziyle büyür ve kapanana kadar yeni sefere çıkamazsın. |
-| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 2.5 askere gelir, hazinesi tıka basa dolu olanınki **32** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
+| **Yoğunluk savunur** | Bir hücrenin bedeli, savunanın *askeri / toprağı* oranıyla **üstel** artar. Hazinesi boş bir düşmanın hücresi 4 askere gelir, hazinesi tıka basa dolu olanınki **51** — yani 13 kat. Dolu hazine gerçek bir kaledir; önce onu kanatman gerekir. |
 | **İki taraf da erir** | Çarpışmada ikisi de kanar ama **saldıranın faturası ağır**: saldıran hücrenin tam bedelini öder, savunan bunun **%75**'ini kaybeder. Savunan kanadıkça yoğunluğu düşer, yoğunluğu düşünce hücreleri ucuzlar — kale zamanla çöker, ama bedelini saldıran öder. |
-| **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner. |
+| **Takviye** | Süren bir cepheye tekrar dokunmak **ikinci sefer açmaz, takviye gönderir**: asker aynı dalgaya eklenir ve **cephenin hızı kalan toplam askere göre yeniden hesaplanır** — cephe hem büyür hem hızlanır. Bir hedefe karşı hep tek dalga sürer, çünkü cephe zaten o hedefle paylaştığın bütün sınır hattı; ikinci bir dalga yeni bir yere yüklenmez, aynı hücreleri kuşatırdı. Takviye de tam halkalara yuvarlanır ve halka bedeli **o anki** cepheden okunur. |
+| **Geri çağırma** | Süren bir seferi durdurabilirsin; kalan asker garnizona döner (hazine tavanı taşarsa fazlası kırpılır). |
 | **Dağılma** | Bir krallık kıtanın binde 0.8'inin (en az 10 hücre) altına düşünce **dağılır**: kalan kırıntı fatihe geçmez, **sahipsiz** toprağa döner. Tıklanamayacak kadar küçük lekeleri kovalamak yok, toprak yeniden yarışa girer. |
-| **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
-| **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. |
+| **İttifak** | Müttefikler birbirine saldıramaz. İttifakı **bozan taraf 20 saniye boyunca hiçbir yere saldıramaz** ve **süren bütün seferleri o anda geri çağrılır** — ihanet bedava değil. Ama ittifaklar **süreli**: 45 saniye sonra kendiliğinden düşer (ceza yok, yeniden kurulabilir). Kalıcı ittifaklar geç oyunda iki bloğu dondurup haritayı kilitliyordu. |
+| **Lider yalnızdır** | Kıtanın **%35**'ini aşan krallıkla kimse ittifak kurmaz ve gücü ne olursa olsun üstüne gidilir. Kural iki yönlüdür: lidere teklif götüremezsin, lider konumundaysan sana da kimse yanaşmaz. |
+| **Şehirler** | Haritadaki isimli yerleşimler **oynanışa girer**. Her şehrin bir büyüklüğü var; sahibine büyüklüğüyle orantılı **gelir** katar ve çevresindeki hücreleri **pahalandırır** — merkezde bedel **3.4 kata** kadar çıkar, halkanın kenarında 1'e iner. Surlar sahibinden bağımsızdır: şehir kimin elindeyse onu korur. Zengin bölge aynı zamanda sert bölgedir, gelir bedavaya gelmez. |
+| **Deniz çıkarması** | Cephe yalnız kara komşuluğuyla kurulmaz: hedefin **en fazla 9 deniz hücresi** ötedeki kıyısına da yüklenilebilir. Boğazın karşısından alınan hücreler **2.5 kat** pahalıdır — çıkarma bedava değildir. Ceza yalnız denizden yüklenen ilk halkaya biner; çıkarma tutunca içeri doğru yayılma normal bedele döner. Bir hücrenin kara komşuluğu varsa zaten çıkarma sayılmaz. |
+| **Adalar** | Kıyı açıklarında, **boğaz menzili içinde** ada kuşakları var: karanın ~**%3.5**'i, harita başına ortalama 4 tane 200+ hücrelik ada. Menzil dışına ada kurulmaz — ulaşılamaz bir ada haritada sonsuza dek boş bir leke demektir. Ada bir başlangıç yurduna da denk gelebilir: o krallık boğazı geçene kadar kendi adasına sıkışır. |
+| **Kuşatma şehirde yavaşlar** | Cephe pahalı bir halkaya girince **yavaşlar**: iki kat pahalı halka yarı hızla dolar. Halkanın *içinde* ilerleme yine eşittir — sınır tek parça hareket eder — ama surlara dayanan cephe gözle görülür biçimde takılır. |
 
 Zafer: kıtanın **%60**'ı. Toprağın eşiğin altına düşerse tarihe karışırsın.
 
-Haritadaki arazi tipleri ve isimli şehirler **tamamen dekoratiftir** — fetih
-maliyetini, hızı ya da geliri etkilemezler. Sadece harita gerçek bir ortaçağ
-haritası gibi dursun diye varlar.
+Haritadaki **arazi tipleri** (ova/orman/dağ) ve yükseklik hâlâ tamamen
+dekoratiftir — yalnız rengi değiştirirler. Oynanışa giren harita öğeleri
+**şehirler** ve **kıyı şekli**dir (adalar, boğazlar).
+
+### Şehirler ne kadar değer?
+
+Sayılar ölçülerek seçildi, tahminle değil.
+
+| | ölçüm |
+|---|---|
+| Haritada şehir | ~300 (tohum 11: 297, toplam büyüklük 337) |
+| Karanın kaçı düz | **%76** — halka haritayı kaplamaz, cepte kalır |
+| Sert kuşak (1.5×+) | %6.6, bunun %1.6'sı **kale** (2.0×+) |
+| Şehri almanın geri ödemesi | **8–38 sn** (ortalama 15) — bir oyun ~144 sn |
+| Gelirin şehir payı | %17–23 arası, dağılıma göre |
+| Kale hücresinin sınırda kalma olasılığı | düz araziye göre **1.38 kat** |
+
+Geri ödeme ölçütü belirleyici oldu: ilk denemede halka geniş ve yumuşaktı
+(karanın %68'ine değiyordu) ve şehri almak **net zarardı** — fazladan fatura
+ancak 173 saniyede kapanıyordu, yani oyun bitmeden. Halka daraltılıp
+keskinleştirildi, gelir yükseltildi.
+
+Cephenin pahalı halkada yavaşlaması da ölçümle geldi: bütçe salt ilerleme
+biriminde tutulduğunda cephe şehrin üstünden aynı süratle geçip yalnız daha çok
+asker yakıyordu — 10 tohumda ölçüldü, savunma çarpanı yüksek hücrelerin sınırda
+kalma oranı düz araziden ayırt edilemiyordu. Yavaşlama eklenince kale hücreleri
+**1.38 kat** daha sık sınırda kalır oldu ve etki savunma gücüyle birlikte tek
+yönlü arttı (1.03 → 1.07 → 1.19 → 1.38).
+
+### Deniz çıkarması ne kadar değiştirdi?
+
+Çıkarma önce **tek başına** eklendi ve ölçüldü: neredeyse hiçbir şey yapmıyordu.
+Oyun başına 60 köprübaşı hücresi (karanın binde biri), haritanın paylaşılma
+süresi birebir aynı (84 sn / 84 sn). Sebebi mekanikte değil haritadaydı —
+üretici **tek parça bir kıta** veriyordu: karanın %99–100'ü tek bağlantılı
+parça, 100+ hücrelik ada yok. Yani "Britanya, Bizans, İskandinavya oyun dışı"
+teşhisi bu üretici için yanlıştı: ortada ada yoktu.
+
+Bu yüzden adalar da üretiliyor. Sonuç:
+
+| | boğaz kapalı | boğaz açık |
+|---|---|---|
+| Oyun sonunda sahipsiz kalan kara | **%2.27** | **%0.30** |
+| Çıkarma seferi / oyun | — | **37** |
+
+12 tohumda ölçüldü: boğazsız bir dünyada ada toprağı **sonsuza dek** boş kalıyor;
+boğazlarla ulaşılamaz toprak **%87 azalıyor**. Denge korundu — 10 tohumun
+10'unda zafer eşiğine ulaşılıyor, ortalama 2.27 dk.
+
+Ada üretiminin tek sert kuralı var: **menzil dışına ada kurulmaz.** Kısıt
+kapatılıp 30 tohum tarandığında 570 adanın 3'ü hiçbir boğaza bağlanamıyordu
+(tohum 7, 20, 21) — ulaşılamaz ada, mekaniği hiç eklememekten beterdir, çünkü
+haritada asla dolmayan bir leke bırakır. Testi tam da o tohumlarla koşuyor.
+
+**Rapor edilen, düzeltilmeyen:** YZ'ye şehir iştahı katsayısı eklendi
+(`nat.cityGreed`) ama kontrollü A/B'de **ölçülebilir etkisi çıkmadı**
+(30 tohum × 2 atama, 8'e 8 ulus: fark −0.09 puan, t ≈ −0.12). Nedeni yapısal:
+saldırı bir *ulusu* hedefliyor ve cephe onunla paylaşılan bütün sınır hattı —
+"şu şehre yürü" diye bir hamle yok. Şehirler ekonomiyi ve sınırların nereye
+oturduğunu değiştiriyor, hedef seçimini değil.
 
 ## Hissiyat
 
@@ -51,7 +113,14 @@ haritası gibi dursun diye varlar.
 - Harita üstündeki **cephe göstergesi** her zaman açıktır: kime yükleniyorsun,
   kim sana yükleniyor, halka ne kadar doldu, cephede kaç asker kaldı — ve ✕ ile
   seferi oradan geri çağırabilirsin
+- Süren cepheye tekrar dokunmak **takviye** gönderir; şerit ne kadar asker
+  gittiğini ve cephede toplam kaç asker olduğunu yeşille yazar
 - Her krallığın adının altında askeri yazar — kimin ne kadar gücü olduğu haritadan okunur
+- Şehir noktası **sahibinin rengiyle** dolar; surların içi haritada koyulaşır,
+  yani pahalı toprak gözle seçilir ve cephenin neden orada takıldığı görülür
+- İmleci bir şehrin üstüne getirince adı, halkasının içindeyken bedel çarpanı yazar
+- Boğazın karşısına yükleniyorsan hedef baloncuğu ⚓ **deniz çıkarması** der;
+  cephe listesinde de çıkarma seferleri ⚓ ile işaretlidir
 - Ele geçen her hücre beyaz parlar, sonra rengine oturur — dalga gözle görülür
 - Üstüne geldiğin krallığın bütün toprağı aydınlanır, ne kadar yer alacağın yazar
 - Saldırı anında ekran hafif sarsılır, tıkladığın yerden halka yayılır
@@ -78,15 +147,15 @@ npm run build
 ```
 
 `dist/realbattle.html` — bütün modüllerin ve CSS'in tek dosyaya paketlenmiş,
-kendi başına açılan hâli (~60 KB). Dış bağımlılığı yok; doğrudan çift
+kendi başına açılan hâli (~128 KB). Dış bağımlılığı yok; doğrudan çift
 tıklayarak da açılır. `dist/artifact.html` ise `<head>`'i kendi sağlayan
 ortamlar için yalnız gövde içeriğini taşır.
 
 ## Test
 
 ```bash
-npm test               # başsız simülasyon (73)
-npm run test:browser   # masaüstü tarayıcı, gerçek fare (49)
+npm test               # başsız simülasyon (97)
+npm run test:browser   # masaüstü tarayıcı, gerçek fare (59)
 npm run test:mobile    # telefon, gerçek çok parmaklı dokunma (29)
 npm run test:all
 ```
@@ -110,7 +179,9 @@ PAGE=/dist/realbattle.html npm run test:mobile
 
 ```
 js/world.js         Harita üretimi. Seed'den deterministik.
-                    Arazi ve şehirler yalnız çizim içindir.
+                    Arazi tipi yalnız çizim içindir; ŞEHİRLER ve ADALAR
+                    oynanışa girer. Tohumdan bir kez hesaplanan alanlar:
+                    cityAt/cityDef (şehir) ve straitHead/To/Next (boğazlar).
 js/sim.js           Bütün oyun kuralları. DOM yok, Math.random yok, Date yok.
                     Tek giriş noktası: createSim(seed) + step(dt, realDt).
 js/render.js        Canvas çizimi ve efektler. Simülasyonu sadece okur.

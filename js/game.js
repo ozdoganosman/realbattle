@@ -3,12 +3,13 @@
 
 import { W, H, S, idx, clamp } from './world.js';
 import {
-  createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK,
+  createSim, step, NATION_DEFS, WIN_FRAC, BETRAY_LOCK, LEADER_FRAC,
   troopCap, power, landFrac, allied, locked, density,
   softCap, hardCap, interestRate, maxDebt, maxCommit, inDebt,
   TICKS_PER_INCOME, tickProgress, tickIndex, ticksToIncome, secsToIncome,
   INCOME_SCALE, incomePayout,
-  startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts,
+  startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, cellCost,
+  frontCost, frontCosts, frontStats,
   formAlliance, breakAlliance, log,
 } from './sim.js';
 import { createRenderer } from './render.js';
@@ -219,16 +220,35 @@ function showChip(sx, sy, o) {
   const chip = $('target-chip');
   const me = sim.nations[sim.playerId];
   if (o === undefined || o === me.id) { hideChip(); return; }
-  const cost = attackCost(sim, o);
+  // Kaç hücre alacağı cephenin ORTALAMA birim bedeline bağlı: şehir halkasından
+  // geçen bir cephede aynı asker belirgin biçimde daha az toprak alır. Taban
+  // bedelle hesaplamak oyuncuya olduğundan fazlasını vaat ediyordu.
+  const st = frontMap().get(o);
+  const birim = st ? st.birim : attackCost(sim, o);
   const troops = gidecek(me, o);
-  const cells = Math.floor(troops / cost);
+  const cells = Math.floor(troops / birim);
   const ad = o < 0 ? 'Boş toprak' : sim.nations[o].name;
   let uyari = '';
   if (o >= 0 && allied(me, sim.nations[o])) uyari = '<i>müttefikin</i>';
   else if (locked(sim, me)) uyari = '<i>ihanet cezan sürüyor</i>';
-  chip.innerHTML = `<b>${ad}</b>` +
+  // Cephe açıksa dokunuş yeni sefer açmaz, var olana takviye gider.
+  const acik = sim.attacks.some(a => a.from === me.id && a.target === o);
+  // İmlecin altındaki hücre bir şehirse ya da surlarının içindeyse söyle:
+  // bedelin neden yüksek olduğu haritadan okunabilmeli.
+  const c = ui.hoverCell;
+  const ci = c >= 0 ? sim.world.cityAt[c] : -1;
+  const kat = c >= 0 ? sim.world.cityDef[c] : 1;
+  const sehir = ci >= 0
+    ? ` <span class="city">🏰 ${sim.world.cities[ci].name}</span>`
+    : kat > 1.05 ? ` <span class="city">🏰 surlar · ${kat.toFixed(1)}× bedel</span>` : '';
+  // Cephenin bir kısmı ya da tamamı boğazın karşısındaysa söyle: çıkarma
+  // pahalıdır, oyuncu bedelin neden yüksek olduğunu bilmeli.
+  const deniz = st && st.cikarma
+    ? ` <span class="sea">⚓ ${st.cikarma === st.hucre ? 'deniz çıkarması' : 'kısmen çıkarma'}</span>`
+    : '';
+  chip.innerHTML = `<b>${ad}</b>${sehir}${deniz}` +
     (uyari ? ` — ${uyari}`
-           : ` · <b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
+           : ` · ${acik ? '<i>takviye</i> ' : ''}<b>${fmt(troops)}</b> asker → ${fmt(cells)} birim toprak`);
   chip.classList.remove('hidden');
   const r = wrap.getBoundingClientRect();
   chip.style.left = clamp(sx - r.left, 70, r.width - 70) + 'px';
@@ -268,22 +288,27 @@ function tapAttack(sx, sy) {
   // dokunmak hedefi seçer; cephe o hedefle olan bütün sınır hattıdır
   const istenen = commitOf(me);
   cepheAn = -9e9;                            // hedef değişecek, bedelleri tazele
+  // Cephe zaten açıksa startAttack yeni sefer açmaz, takviyeye çevirir —
+  // önceki askeri not al ki ne kadar gittiğini yazabilelim.
+  const acik = sim.attacks.find(a => a.from === me.id && a.target === target);
+  const onceki = acik ? acik.troops : 0;
   const atk = startAttack(sim, me, target, istenen);
   if (!atk) {
     // Hazine yetmiyorsa borç bir seçenek — ama kendiliğinden borçlandırmıyoruz,
     // oyuncu kaydıracı kırmızı bölgeye kendi çekmeli.
-    let mesaj;
-    if (sim.attacks.some(a => a.from === me.id && a.target === target)) {
-      mesaj = 'Bu cephe zaten açık';
-    } else if (frontCost(sim, me, target) > 0) {
-      mesaj = `Bu cepheyi bir hücre itmek ${fmt(frontCost(sim, me, target))} asker `
-            + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan';
-    } else {
-      mesaj = 'Sınırın buraya değmiyor';
-    }
-    flash(mesaj);
+    const halka = frontCost(sim, me, target);
+    flash(halka > 0
+      ? `Bu cepheyi bir hücre itmek ${fmt(halka)} asker `
+        + 'ister — gücü yükselt ya da kırmızı bölgeye çekip borçlan'
+      : 'Sınırın buraya değmiyor');
     renderer.ripple(x, y, 'rgba(200,200,200,0.6)');
     return;
+  }
+  if (acik) {
+    const ad = target < 0 ? 'boş toprak' : sim.nations[target].name;
+    // Başa ⚔ koymuyoruz: Georgia'da geri çağırma ✕'ine benziyor.
+    flash(`${ad} cephesine ${fmt(atk.troops - onceki)} asker takviye — `
+        + `cephede toplam ${fmt(atk.troops)} asker`, 'good');
   }
   cepheAn = -9e9;
   renderer.ripple(x, y, me.color);
@@ -293,13 +318,15 @@ function tapAttack(sx, sy) {
   refreshTop(); refreshFronts();
 }
 
-function flash(text) {
+// tip: 'warn' engel/uyarı (kırmızı), 'good' olumlu geri bildirim (yeşil)
+function flash(text, tip = 'warn') {
   const el = $('hint-bar');
   el.textContent = text;
-  el.classList.add('warn');
+  el.classList.remove('warn', 'good');
+  el.classList.add(tip);
   clearTimeout(flash._t);
   flash._t = setTimeout(() => {
-    el.classList.remove('warn');
+    el.classList.remove('warn', 'good');
     el.innerHTML = 'Saldırmak için düşman ya da boş toprağa <b>dokun</b>.';
   }, 2400);
 }
@@ -339,12 +366,14 @@ function commitOf(me) {
 // Ölçüt GERÇEK zaman: oyun duraklatıldığında sim.t donuyor ve önbellek hiç
 // tazelenmiyordu — etiket, haritanın eski hâlini gösterip gerçekte gidenden
 // sapıyordu.
+// Değerler {bedel, hucre, birim}: hücre bedeli artık cephe boyunca sabit
+// olmadığı için "kaç hücre alır" ancak ORTALAMA birim bedelle söylenebilir.
 let cepheler = new Map(), cepheAn = -9e9;
 function frontMap() {
   if (sim.playerId < 0) return cepheler;
   const simdi = performance.now();
   if (simdi - cepheAn > 250) {
-    cepheler = frontCosts(sim, sim.nations[sim.playerId]);
+    cepheler = frontStats(sim, sim.nations[sim.playerId]);
     cepheAn = simdi;
   }
   return cepheler;
@@ -361,7 +390,8 @@ function halkaYuvarla(me, halka, istenen) {
   return n * halka;
 }
 function gidecek(me, target) {
-  return halkaYuvarla(me, frontMap().get(target), commitOf(me));
+  const st = frontMap().get(target);
+  return halkaYuvarla(me, st && st.bedel, commitOf(me));
 }
 
 function refreshPct() {
@@ -370,7 +400,7 @@ function refreshPct() {
   const istenen = commitOf(me);
   // En ucuz komşu cephe: dokunulacak yer belli değilken hesap buna göre.
   let enUcuz = Infinity;
-  for (const bedel of frontMap().values()) enUcuz = Math.min(enUcuz, bedel);
+  for (const st of frontMap().values()) enUcuz = Math.min(enUcuz, st.bedel);
   const halka = enUcuz < Infinity ? enUcuz : 0;
   const troops = halka ? halkaYuvarla(me, halka, istenen) : istenen;
   const elde = Math.max(0, me.pool);
@@ -435,6 +465,11 @@ function refreshTreasury(me) {
   $('cap-soft').style.display = borclu ? 'none' : '';
   const pay = incomePayout(sim, me);
   $('econ-inc').textContent = `+${fmt(pay.land)}` + (borclu ? ' → borca' : '');
+  // Şehir geliri toprağa değil, elindeki şehirlerin büyüklüğüne bağlı — kaç
+  // şehir tuttuğun yanında yazıyor ki iki gelirin ayrı işlediği görünsün.
+  $('econ-city').textContent = me.cityCount
+    ? `+${fmt(pay.city)} (${me.cityCount} şehir)`
+    : 'şehrin yok';
   $('econ-balloon').textContent = borclu ? '—' : `+${fmt(pay.balloon)}`;
   $('econ-soft').textContent = borclu
     ? `borç ${fmt(-me.pool)} / ${fmt(maxDebt(sim, me))}`
@@ -475,7 +510,9 @@ function refreshCycle(me, borclu) {
   const pay = incomePayout(sim, me);
   $('cycle-note').innerHTML = borclu
     ? `<b>${fmt(pay.land)}</b> ödeme <b>${kalan.toFixed(1)}sn</b> sonra borca yatacak`
-    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)} + balon ${fmt(pay.balloon)})</span>` +
+    : `<b>+${fmt(pay.total)}</b> <span class="s">(arsa ${fmt(pay.land)}` +
+      (pay.city > 0 ? ` + şehir ${fmt(pay.city)}` : '') +
+      ` + balon ${fmt(pay.balloon)})</span>` +
       ` <b>${kalan.toFixed(1)}sn</b> sonra`;
   refreshMini(me, borclu, kalan);
 }
@@ -542,7 +579,10 @@ function refreshFronts() {
     row.className = 'front';
     const pct = clamp(a.troops / a.start, 0, 1);
     row.innerHTML =
-      `<div class="front-top"><span>${ad}</span><b>${fmt(a.troops)}</b></div>` +
+      `<div class="front-top"><span>${ad}` +
+      (a.amfibi && a.amfibi.size ? ' <span class="sea">⚓</span>' : '') +
+      (a.takviye ? ` <span class="floor">+${a.takviye} takviye</span>` : '') +
+      `</span><b>${fmt(a.troops)}</b></div>` +
       `<div class="bar"><i style="width:${pct * 100}%;background:${me.color}"></i></div>`;
     row.appendChild(mkBtn('Geri çağır', 'bad', () => {
       cancelAttack(sim, a); refreshFronts(); refreshTop();
@@ -644,6 +684,7 @@ function refreshDiplo() {
       `<span class="sw" style="background:${n.color}"></span>` +
       `<span class="nm">${n.name}</span>` +
       `<span class="pc">${(landFrac(sim, n) * 100).toFixed(1)}%</span>` +
+      `<span class="ct" title="Elindeki şehir">${n.cityCount ? '🏰' + n.cityCount : ''}</span>` +
       `<span class="tr" title="Garnizondaki asker">${n.pool < 0
         ? `<i class="debt">−${fmt(-n.pool)}</i>` : fmt(n.pool)}</span>` +
       `<span class="st">${self ? 'sen' : ally ? 'ittifak' : 'yğ ' + density(n).toFixed(1)}</span>`;
@@ -658,9 +699,17 @@ function refreshDiplo() {
         }, `${BETRAY_LOCK} saniye hiçbir yere saldıramazsın`));
       } else {
         acts.appendChild(mkBtn('İttifak teklif et', '', () => {
-          const ok = power(sim, me) < power(sim, n) * 2 && landFrac(sim, me) < 0.35;
+          // Lider kuralı ÇİFT yönlü: kimse lidere yanaşmaz, kimse de lidere
+          // yanaşılmaz. Yalnız oyuncunun payına bakmak, oyuncunun kaçan
+          // liderle ittifak kurup haritayı kilitlemesine izin veriyordu —
+          // YZ'nin (aiThink) uyduğu kuralın tam tersi.
+          const lider = landFrac(sim, n) >= LEADER_FRAC;
+          const ok = !lider && landFrac(sim, me) < LEADER_FRAC
+            && power(sim, me) < power(sim, n) * 2;
           if (ok && formAlliance(sim, me, n)) sfx.ally();
-          else log(sim, `❌ ${n.name} ittifakı reddetti — fazla güçlüsün`, 'info');
+          else log(sim, lider
+            ? `❌ ${n.name} ittifakı reddetti — kıtanın lideri kimseyle anlaşmaz`
+            : `❌ ${n.name} ittifakı reddetti — fazla güçlüsün`, 'info');
           refreshDiplo();
         }));
       }
@@ -751,6 +800,9 @@ function start(id) {
   sim.playerId = id;
   sim.nations[id].ai = false;
   ui.lastCells = sim.nations[id].cells;
+  // Başlangıç yurdu FETHEDİLMİŞ sayılmamalı: sonCells 0'da bırakılınca bitiş
+  // ekranı daha ilk karede bütün başlangıç toprağını "fethedilen"e yazıyordu.
+  ui.sonCells = sim.nations[id].cells;
   ui.shownTroops = sim.nations[id].pool;
   ui.shownLand = landFrac(sim, sim.nations[id]);
   $('start-screen').classList.add('hidden');
@@ -858,7 +910,7 @@ window.__rb = {
   // arayüzün "kaç asker gidecek" hesabı — test bunu etiketle karşılaştırıyor
   commitOf, gidecek,
   api: {
-    startAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
+    startAttack, reinforceAttack, cancelAttack, canAttack, attackCost, frontCost, frontCosts, formAlliance, breakAlliance,
     power, maxDebt, maxCommit, inDebt, softCap, hardCap, interestRate,
     tickProgress, tickIndex, ticksToIncome, secsToIncome, incomePayout,
   },

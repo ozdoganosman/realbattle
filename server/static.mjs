@@ -18,8 +18,12 @@ const MIME = {
 
 http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
-  const file = path.join(ROOT, rel);
-  if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+  const file = path.resolve(ROOT, rel);
+  // startsWith(ROOT) yeterli değil: ROOT'un yanındaki `realbattle-gizli/` gibi
+  // bir kardeş dizin de öneki geçer. path.relative kapsamayı kesin ölçer.
+  const ic = path.relative(ROOT, file);
+  if (ic.startsWith('..') || path.isAbsolute(ic) ||
+      !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Bulunamadı');
     return;
